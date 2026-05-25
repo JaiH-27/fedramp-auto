@@ -1,0 +1,431 @@
+{
+  "baseline": "low",
+  "coverage_pct": 44.8,
+  "satisfied_ksi_count": 13,
+  "total_ksi_count": 29,
+  "satisfied_control_ids": [
+    "AC-2",
+    "AC-22",
+    "AC-3",
+    "AC-6",
+    "AU-12",
+    "AU-12(1)",
+    "AU-2",
+    "AU-3",
+    "AU-6",
+    "AU-9",
+    "CP-9",
+    "SC-12",
+    "SC-12(1)",
+    "SC-28",
+    "SC-5",
+    "SC-6",
+    "SC-7",
+    "SI-12"
+  ],
+  "resources": [
+    {
+      "identifier": "aws_s3_bucket.audit_logs",
+      "source_file": "C:\\Users\\jaiha\\OneDrive\\Documents\\Jai Personal Project\\fedramp_auto\\fedramp_auto\\tests\\fixtures\\terraform\\main.tf",
+      "controls": []
+    },
+    {
+      "identifier": "aws_s3_bucket_server_side_encryption_configuration.audit_logs",
+      "source_file": "C:\\Users\\jaiha\\OneDrive\\Documents\\Jai Personal Project\\fedramp_auto\\fedramp_auto\\tests\\fixtures\\terraform\\main.tf",
+      "controls": [
+        {
+          "control_id": "SC-28",
+          "rationale": "Server-side encryption ensures data at rest is protected.",
+          "source": "static"
+        }
+      ]
+    },
+    {
+      "identifier": "aws_s3_bucket_versioning.audit_logs",
+      "source_file": "C:\\Users\\jaiha\\OneDrive\\Documents\\Jai Personal Project\\fedramp_auto\\fedramp_auto\\tests\\fixtures\\terraform\\main.tf",
+      "controls": []
+    },
+    {
+      "identifier": "aws_s3_bucket_public_access_block.audit_logs",
+      "source_file": "C:\\Users\\jaiha\\OneDrive\\Documents\\Jai Personal Project\\fedramp_auto\\fedramp_auto\\tests\\fixtures\\terraform\\main.tf",
+      "controls": [
+        {
+          "control_id": "AC-3",
+          "rationale": "Public access block prevents unauthorized public read/write.",
+          "source": "static"
+        },
+        {
+          "control_id": "AC-22",
+          "rationale": "Explicit block on public ACLs and policies limits exposure.",
+          "source": "static"
+        },
+        {
+          "control_id": "SC-7",
+          "rationale": "Restricting public access enforces a security boundary on the bucket.",
+          "source": "static"
+        }
+      ]
+    },
+    {
+      "identifier": "aws_iam_role.app_role",
+      "source_file": "C:\\Users\\jaiha\\OneDrive\\Documents\\Jai Personal Project\\fedramp_auto\\fedramp_auto\\tests\\fixtures\\terraform\\main.tf",
+      "controls": [
+        {
+          "control_id": "AC-2",
+          "rationale": "IAM role defines a managed identity subject to account management controls.",
+          "source": "static"
+        },
+        {
+          "control_id": "AC-3",
+          "rationale": "IAM role policy enforces least-privilege access to AWS resources.",
+          "source": "static"
+        },
+        {
+          "control_id": "AC-6",
+          "rationale": "Role-based access limits permissions to those required for function.",
+          "source": "static"
+        }
+      ]
+    },
+    {
+      "identifier": "aws_kms_key.app_key",
+      "source_file": "C:\\Users\\jaiha\\OneDrive\\Documents\\Jai Personal Project\\fedramp_auto\\fedramp_auto\\tests\\fixtures\\terraform\\main.tf",
+      "controls": [
+        {
+          "control_id": "SC-12",
+          "rationale": "KMS key provides managed cryptographic key lifecycle.",
+          "source": "static"
+        },
+        {
+          "control_id": "SC-28",
+          "rationale": "KMS-managed encryption key protects data at rest.",
+          "source": "static"
+        },
+        {
+          "control_id": "SC-12(1)",
+          "rationale": "Automatic key rotation reduces risk of key compromise over time.",
+          "source": "static"
+        }
+      ]
+    },
+    {
+      "identifier": "aws_db_instance.app_db",
+      "source_file": "C:\\Users\\jaiha\\OneDrive\\Documents\\Jai Personal Project\\fedramp_auto\\fedramp_auto\\tests\\fixtures\\terraform\\main.tf",
+      "controls": [
+        {
+          "control_id": "SC-28",
+          "rationale": "storage_encrypted=true encrypts the RDS volume at rest.",
+          "source": "static"
+        },
+        {
+          "control_id": "CP-9",
+          "rationale": "Automated backups with non-zero retention period satisfy backup requirements.",
+          "source": "static"
+        },
+        {
+          "control_id": "SI-12",
+          "rationale": "35-day retention satisfies FedRAMP audit log retention guidance.",
+          "source": "static"
+        },
+        {
+          "control_id": "SC-6",
+          "rationale": "Multi-AZ deployment provides high availability and failover.",
+          "source": "static"
+        },
+        {
+          "control_id": "SC-5",
+          "rationale": "Multi-AZ protects database availability against zone failures.",
+          "source": "static"
+        }
+      ]
+    },
+    {
+      "identifier": "aws_cloudtrail.main",
+      "source_file": "C:\\Users\\jaiha\\OneDrive\\Documents\\Jai Personal Project\\fedramp_auto\\fedramp_auto\\tests\\fixtures\\terraform\\main.tf",
+      "controls": [
+        {
+          "control_id": "AU-2",
+          "rationale": "CloudTrail records API-level audit events across the account.",
+          "source": "static"
+        },
+        {
+          "control_id": "AU-3",
+          "rationale": "CloudTrail captures who, what, when, where for every API call.",
+          "source": "static"
+        },
+        {
+          "control_id": "AU-12",
+          "rationale": "CloudTrail generates audit records for all supported AWS services.",
+          "source": "static"
+        },
+        {
+          "control_id": "AU-9",
+          "rationale": "Log file validation detects tampering with delivered log files.",
+          "source": "static"
+        },
+        {
+          "control_id": "AU-6",
+          "rationale": "Global service events provides complete audit coverage.",
+          "source": "static"
+        },
+        {
+          "control_id": "AU-12(1)",
+          "rationale": "Multi-region trail ensures audit coverage in all active regions.",
+          "source": "static"
+        }
+      ]
+    }
+  ],
+  "gaps": [
+    {
+      "ksi_id": "KSI-AC-3",
+      "title": "Multi-factor authentication for privileged access",
+      "severity": "critical",
+      "missing_controls": [
+        "IA-2",
+        "IA-2(1)"
+      ]
+    },
+    {
+      "ksi_id": "KSI-AC-4",
+      "title": "Session management and timeout",
+      "severity": "high",
+      "missing_controls": [
+        "AC-11",
+        "AC-12"
+      ]
+    },
+    {
+      "ksi_id": "KSI-AC-6",
+      "title": "Remote access controls",
+      "severity": "high",
+      "missing_controls": [
+        "AC-17"
+      ]
+    },
+    {
+      "ksi_id": "KSI-AU-3",
+      "title": "Audit log storage and retention",
+      "severity": "high",
+      "missing_controls": [
+        "AU-4",
+        "AU-11"
+      ]
+    },
+    {
+      "ksi_id": "KSI-CM-1",
+      "title": "Baseline configuration and inventory",
+      "severity": "critical",
+      "missing_controls": [
+        "CM-6",
+        "CM-8"
+      ]
+    },
+    {
+      "ksi_id": "KSI-CM-2",
+      "title": "Configuration change control",
+      "severity": "high",
+      "missing_controls": [
+        "CM-3"
+      ]
+    },
+    {
+      "ksi_id": "KSI-CM-4",
+      "title": "Least functionality",
+      "severity": "medium",
+      "missing_controls": [
+        "CM-7"
+      ]
+    },
+    {
+      "ksi_id": "KSI-IA-1",
+      "title": "Unique identification and authentication",
+      "severity": "critical",
+      "missing_controls": [
+        "IA-2",
+        "IA-4"
+      ]
+    },
+    {
+      "ksi_id": "KSI-IA-2",
+      "title": "Password and authenticator management",
+      "severity": "high",
+      "missing_controls": [
+        "IA-5"
+      ]
+    },
+    {
+      "ksi_id": "KSI-IR-1",
+      "title": "Incident response capability",
+      "severity": "critical",
+      "missing_controls": [
+        "IR-4",
+        "IR-5",
+        "IR-6"
+      ]
+    },
+    {
+      "ksi_id": "KSI-RA-1",
+      "title": "Vulnerability scanning",
+      "severity": "critical",
+      "missing_controls": [
+        "RA-5"
+      ]
+    },
+    {
+      "ksi_id": "KSI-SC-1",
+      "title": "Data in transit encryption",
+      "severity": "critical",
+      "missing_controls": [
+        "SC-8",
+        "SC-8(1)"
+      ]
+    },
+    {
+      "ksi_id": "KSI-SC-5",
+      "title": "Information flow enforcement",
+      "severity": "high",
+      "missing_controls": [
+        "AC-4"
+      ]
+    },
+    {
+      "ksi_id": "KSI-SI-1",
+      "title": "Malicious code protection",
+      "severity": "critical",
+      "missing_controls": [
+        "SI-3"
+      ]
+    },
+    {
+      "ksi_id": "KSI-SI-2",
+      "title": "System monitoring",
+      "severity": "critical",
+      "missing_controls": [
+        "SI-4"
+      ]
+    },
+    {
+      "ksi_id": "KSI-SI-4",
+      "title": "Flaw remediation",
+      "severity": "high",
+      "missing_controls": [
+        "SI-2"
+      ]
+    }
+  ],
+  "remediations": [
+    {
+      "ksi_id": "KSI-AC-3",
+      "risk_explanation": "MFA is required for all privileged and remote access.",
+      "remediation_action": "Implement controls IA-2, IA-2(1) to satisfy KSI-AC-3: Multi-factor authentication for privileged access.",
+      "terraform_snippet": "# No automated snippet available \u2014 consult FedRAMP documentation.",
+      "source": "generic"
+    },
+    {
+      "ksi_id": "KSI-CM-1",
+      "risk_explanation": "A documented baseline configuration and component inventory is maintained.",
+      "remediation_action": "Implement controls CM-6, CM-8 to satisfy KSI-CM-1: Baseline configuration and inventory.",
+      "terraform_snippet": "# No automated snippet available \u2014 consult FedRAMP documentation.",
+      "source": "generic"
+    },
+    {
+      "ksi_id": "KSI-IA-1",
+      "risk_explanation": "All users and devices are uniquely identified and authenticated.",
+      "remediation_action": "Implement controls IA-2, IA-4 to satisfy KSI-IA-1: Unique identification and authentication.",
+      "terraform_snippet": "# No automated snippet available \u2014 consult FedRAMP documentation.",
+      "source": "generic"
+    },
+    {
+      "ksi_id": "KSI-IR-1",
+      "risk_explanation": "Incidents are detected, handled, and reported per documented procedures.",
+      "remediation_action": "Implement controls IR-4, IR-5, IR-6 to satisfy KSI-IR-1: Incident response capability.",
+      "terraform_snippet": "# No automated snippet available \u2014 consult FedRAMP documentation.",
+      "source": "generic"
+    },
+    {
+      "ksi_id": "KSI-RA-1",
+      "risk_explanation": "Unscanned systems accumulate exploitable vulnerabilities. FedRAMP RA-5 requires regular vulnerability scanning with findings tracked and remediated within defined timeframes (30 days for critical/high).",
+      "remediation_action": "Enable Amazon Inspector v2 for EC2 and container image scanning. Enable AWS Security Hub to aggregate findings. Configure SNS alerts for critical findings.",
+      "terraform_snippet": "resource \"aws_inspector2_enabler\" \"main\" {\n  account_ids    = [data.aws_caller_identity.current.account_id]\n  resource_types = [\"EC2\", \"ECR\", \"LAMBDA\"]\n}\n\nresource \"aws_securityhub_account\" \"main\" {}\n\nresource \"aws_securityhub_standards_subscription\" \"fedramp\" {\n  standards_arn = \"arn:aws:securityhub:us-east-1::standards/aws-foundational-security-best-practices/v/1.0.0\"\n  depends_on    = [aws_securityhub_account.main]\n}",
+      "source": "static"
+    },
+    {
+      "ksi_id": "KSI-SC-1",
+      "risk_explanation": "Unencrypted data in transit can be intercepted and read by an adversary performing a man-in-the-middle attack. FedRAMP SC-8 requires encryption of all data in transit using TLS 1.2 or higher.",
+      "remediation_action": "Enforce HTTPS on all load balancers and APIs. Add an aws_lb_listener with protocol=HTTPS and a valid ACM certificate. Add an aws_api_gateway_domain_name with a security policy of TLS_1_2.",
+      "terraform_snippet": "# Force HTTPS on ALB\nresource \"aws_lb_listener\" \"https\" {\n  load_balancer_arn = aws_lb.example.arn\n  port              = 443\n  protocol          = \"HTTPS\"\n  ssl_policy        = \"ELBSecurityPolicy-TLS13-1-2-2021-06\"\n  certificate_arn   = aws_acm_certificate.cert.arn\n  default_action {\n    type             = \"forward\"\n    target_group_arn = aws_lb_target_group.app.arn\n  }\n}\n\n# Redirect HTTP \u2192 HTTPS\nresource \"aws_lb_listener\" \"http_redirect\" {\n  load_balancer_arn = aws_lb.example.arn\n  port              = 80\n  protocol          = \"HTTP\"\n  default_action {\n    type = \"redirect\"\n    redirect {\n      port        = \"443\"\n      protocol    = \"HTTPS\"\n      status_code = \"HTTP_301\"\n    }\n  }\n}",
+      "source": "static"
+    },
+    {
+      "ksi_id": "KSI-SI-1",
+      "risk_explanation": "Malicious code protection is deployed and updated at system entry/exit points.",
+      "remediation_action": "Implement controls SI-3 to satisfy KSI-SI-1: Malicious code protection.",
+      "terraform_snippet": "# No automated snippet available \u2014 consult FedRAMP documentation.",
+      "source": "generic"
+    },
+    {
+      "ksi_id": "KSI-SI-2",
+      "risk_explanation": "Without continuous monitoring, attacks can persist undetected for extended periods. FedRAMP SI-4 requires that the information system is monitored for attacks and indicators of potential attacks.",
+      "remediation_action": "Enable Amazon GuardDuty in all regions. Configure EventBridge rules to route HIGH/CRITICAL findings to SNS for alerting.",
+      "terraform_snippet": "resource \"aws_guardduty_detector\" \"main\" {\n  enable = true\n  datasources {\n    s3_logs { enable = true }\n    kubernetes { audit_logs { enable = true } }\n    malware_protection {\n      scan_ec2_instance_with_findings { ebs_volumes { enable = true } }\n    }\n  }\n}\n\nresource \"aws_cloudwatch_event_rule\" \"guardduty_high\" {\n  name        = \"guardduty-high-severity\"\n  description = \"Capture GuardDuty HIGH and CRITICAL findings\"\n  event_pattern = jsonencode({\n    source      = [\"aws.guardduty\"]\n    detail-type = [\"GuardDuty Finding\"]\n    detail      = { severity = [{ numeric = [\">=\", 7] }] }\n  })\n}\n\nresource \"aws_cloudwatch_event_target\" \"guardduty_sns\" {\n  rule      = aws_cloudwatch_event_rule.guardduty_high.name\n  target_id = \"SendToSNS\"\n  arn       = aws_sns_topic.security_alerts.arn\n}",
+      "source": "static"
+    },
+    {
+      "ksi_id": "KSI-AC-4",
+      "risk_explanation": "Inactive sessions are terminated after a defined period.",
+      "remediation_action": "Implement controls AC-11, AC-12 to satisfy KSI-AC-4: Session management and timeout.",
+      "terraform_snippet": "# No automated snippet available \u2014 consult FedRAMP documentation.",
+      "source": "generic"
+    },
+    {
+      "ksi_id": "KSI-AC-6",
+      "risk_explanation": "Remote access is authorized, encrypted, and monitored.",
+      "remediation_action": "Implement controls AC-17 to satisfy KSI-AC-6: Remote access controls.",
+      "terraform_snippet": "# No automated snippet available \u2014 consult FedRAMP documentation.",
+      "source": "generic"
+    },
+    {
+      "ksi_id": "KSI-AU-3",
+      "risk_explanation": "Logs are stored with sufficient capacity and retained >= 90 days.",
+      "remediation_action": "Implement controls AU-4, AU-11 to satisfy KSI-AU-3: Audit log storage and retention.",
+      "terraform_snippet": "# No automated snippet available \u2014 consult FedRAMP documentation.",
+      "source": "generic"
+    },
+    {
+      "ksi_id": "KSI-CM-2",
+      "risk_explanation": "Configuration changes are controlled, reviewed, and approved.",
+      "remediation_action": "Implement controls CM-3 to satisfy KSI-CM-2: Configuration change control.",
+      "terraform_snippet": "# No automated snippet available \u2014 consult FedRAMP documentation.",
+      "source": "generic"
+    },
+    {
+      "ksi_id": "KSI-IA-2",
+      "risk_explanation": "Authenticators meet complexity, rotation, and storage requirements.",
+      "remediation_action": "Implement controls IA-5 to satisfy KSI-IA-2: Password and authenticator management.",
+      "terraform_snippet": "# No automated snippet available \u2014 consult FedRAMP documentation.",
+      "source": "generic"
+    },
+    {
+      "ksi_id": "KSI-SC-5",
+      "risk_explanation": "Information flows between systems are controlled and enforced.",
+      "remediation_action": "Implement controls AC-4 to satisfy KSI-SC-5: Information flow enforcement.",
+      "terraform_snippet": "# No automated snippet available \u2014 consult FedRAMP documentation.",
+      "source": "generic"
+    },
+    {
+      "ksi_id": "KSI-SI-4",
+      "risk_explanation": "Security flaws are identified, reported, and corrected.",
+      "remediation_action": "Implement controls SI-2 to satisfy KSI-SI-4: Flaw remediation.",
+      "terraform_snippet": "# No automated snippet available \u2014 consult FedRAMP documentation.",
+      "source": "generic"
+    },
+    {
+      "ksi_id": "KSI-CM-4",
+      "risk_explanation": "Systems are configured to provide only essential capabilities.",
+      "remediation_action": "Implement controls CM-7 to satisfy KSI-CM-4: Least functionality.",
+      "terraform_snippet": "# No automated snippet available \u2014 consult FedRAMP documentation.",
+      "source": "generic"
+    }
+  ]
+}
