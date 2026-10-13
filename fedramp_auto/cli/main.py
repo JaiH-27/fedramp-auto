@@ -110,6 +110,7 @@ def scan(
     from fedramp_auto.mapper.control_mapper import ControlMapper
     from fedramp_auto.gaps.detector import detect_gaps
     from fedramp_auto.advisor.remediation import RemediationAdvisor
+    from fedramp_auto.oscal.ssp_generator import generate_ssp
 
     console.print(Panel(
         f"[bold]FedRAMP-Auto[/bold] · scan\n"
@@ -217,6 +218,10 @@ def scan(
     result_path = output / "scan_result.json"
     result_path.write_text(json.dumps(scan_result, indent=2))
 
+    # ── Generate OSCAL SSP ────────────────────────────────────────────────────
+    ssp_path = output / "ssp.json"
+    generate_ssp(gap_report, mappings, ssp_path)
+
     # ── Save markdown report ───────────────────────────────────────────────────
     md_lines = [
         f"# FedRAMP-Auto scan report\n",
@@ -246,6 +251,7 @@ def scan(
     console.print(f"[green]Results saved:[/green]")
     console.print(f"  {result_path}")
     console.print(f"  {md_path}")
+    console.print(f"  {ssp_path}")
     console.print()
 
     # Exit non-zero if there are critical gaps (useful in CI)
@@ -301,8 +307,7 @@ def validate(
     """
     Validate an OSCAL SSP JSON file against the FedRAMP schema.
 
-    Checks JSON structure, required fields, and OSCAL schema compliance.
-    Full FedRAMP validator integration requires the fedramp-automation repo.
+    Checks JSON structure, FedRAMP-specific fields, and OSCAL model compliance.
     """
     _setup_logging(verbose)
 
@@ -310,42 +315,28 @@ def validate(
         err_console.print(f"[red]File not found: {ssp_file}[/red]")
         raise typer.Exit(1)
 
+    from fedramp_auto.oscal.validator import validate_ssp_file
+
     console.print(f"Validating [cyan]{ssp_file}[/cyan]...")
+    report = validate_ssp_file(ssp_file)
+    for issue in report.issues:
+        colour = {"error": "red", "warning": "yellow", "info": "dim"}.get(
+            issue.severity, "white"
+        )
+        location = f" [dim]({issue.path})[/dim]" if issue.path else ""
+        console.print(f"[{colour}]{issue.severity.upper()} {issue.code}[/] {issue.message}{location}")
 
-    try:
-        data = json.loads(ssp_file.read_text())
-    except json.JSONDecodeError as exc:
-        err_console.print(f"[red]Invalid JSON: {exc}[/red]")
-        raise typer.Exit(1)
-
-    errors: list[str] = []
-
-    # Basic structural checks
-    ssp = data.get("system-security-plan")
-    if not ssp:
-        errors.append("Missing top-level 'system-security-plan' key")
+    if report.passed:
+        console.print(f"[green]✓ {report.summary()}[/green]")
     else:
-        for field in ("uuid", "metadata", "system-characteristics", "control-implementation"):
-            if field not in ssp:
-                errors.append(f"Missing required field: system-security-plan.{field}")
-
-        meta = ssp.get("metadata", {})
-        for mf in ("title", "last-modified", "version", "oscal-version"):
-            if mf not in meta:
-                errors.append(f"Missing metadata field: {mf}")
-
-    if errors:
-        console.print(f"[red]Validation failed — {len(errors)} error(s):[/red]")
-        for e in errors:
-            console.print(f"  [red]✗[/red] {e}")
+        console.print(f"[red]✗ {report.summary()}[/red]")
         raise typer.Exit(1)
-    else:
-        console.print("[green]✓ Structural validation passed[/green]")
-        console.print("[dim]  Note: full FedRAMP schema validation requires the fedramp-automation toolchain.[/dim]")
-        console.print("[dim]  Install: https://github.com/GSA/fedramp-automation[/dim]")
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     app()
+
+
+

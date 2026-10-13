@@ -24,7 +24,7 @@ KSI gap detector         ← compares against 56 (Low) / 61 (Moderate) FedRAMP K
 Remediation advisor      ← plain-English fixes + Terraform snippets per gap
      │
      ▼
-OSCAL SSP (JSON)         ← RFC-0024 compliant, ready for FedRAMP submission
+OSCAL SSP (JSON)         ← OSCAL 1.1.2 draft for review and completion
 ```
 
 ---
@@ -50,7 +50,7 @@ This installs Ollama, starts the local server, and pulls Mistral 7B (~4 GB).
 ### 2. Install FedRAMP-Auto
 
 ```bash
-git clone https://github.com/yourorg/fedramp-auto
+git clone https://github.com/JaiH-27/fedramp-auto
 cd fedramp-auto
 poetry install
 ```
@@ -86,6 +86,7 @@ Output:
   Results saved:
     ./output/scan_result.json
     ./output/report.md
+    ./output/ssp.json
 ```
 
 ### 5. View the gap report
@@ -106,6 +107,12 @@ open ./output/report.md
 ```bash
 poetry run fedramp-auto validate ./output/ssp.json
 ```
+
+The generated SSP is a draft containing inferred infrastructure evidence and
+placeholder system details. Review and complete it with your system owner and
+security team before using it in an authorization package. The local validator
+checks OSCAL model structure and common FedRAMP fields; it does not replace the
+official FedRAMP validation workflow.
 
 ---
 
@@ -191,7 +198,7 @@ Add to your GitHub Actions workflow to block PRs that introduce critical complia
 - [x] Phase 1: Terraform parser + project scaffold
 - [x] Phase 2: Control mapper + KSI gap detector + remediation advisor
 - [x] Phase 4: CLI (scan / report / validate)
-- [ ] Phase 3: OSCAL SSP generator (compliance-trestle integration)
+- [x] Phase 3: OSCAL SSP generator (compliance-trestle integration)
 - [ ] Azure ARM template support
 - [ ] AWS CDK support
 - [ ] GitHub App for automated PR comments
