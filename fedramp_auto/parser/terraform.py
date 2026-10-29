@@ -50,8 +50,19 @@ _SECRET_ATTR_NAMES: frozenset[str] = frozenset(
         "secret_key", "private_key", "auth_token", "client_secret",
         "db_password", "master_password", "kms_key_id", "certificate_body",
         "private_key_pem", "certificate_pem",
+        # Azure ARM names (camelCase in source, normalized to snake_case)
+        "admin_password", "administrator_login_password", "connection_string",
+        "sas_token", "primary_key", "secondary_key", "shared_key",
+        "storage_account_key", "instrumentation_key",
     }
 )
+
+_CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+
+
+def _normalize_attr_name(name: str) -> str:
+    """camelCase → snake_case so ARM names match _SECRET_ATTR_NAMES."""
+    return _CAMEL_BOUNDARY.sub("_", name).lower()
 
 
 # ── Data model ────────────────────────────────────────────────────────────────
@@ -101,7 +112,10 @@ def _sanitize_value(attr_name: str, value: Any, depth: int = 0) -> Any:
         return value
 
     if isinstance(value, str):
-        if attr_name in _SECRET_ATTR_NAMES or _looks_like_secret_value(value):
+        if (
+            _normalize_attr_name(attr_name) in _SECRET_ATTR_NAMES
+            or _looks_like_secret_value(value)
+        ):
             return _SECRET_PLACEHOLDER
         return value
 
@@ -192,7 +206,7 @@ def parse_directory(directory: str | Path) -> ParseResult:
     tf_files = sorted(root.rglob("*.tf"))
 
     if not tf_files:
-        log.warning("No .tf files found under %s", root)
+        log.info("No .tf files found under %s", root)
         return result
 
     log.info("Parsing %d .tf file(s) under %s", len(tf_files), root)

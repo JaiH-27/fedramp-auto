@@ -72,7 +72,7 @@ def test_ssp_has_metadata():
     mappings, gap_report = _make_test_data()
     plan = build_ssp(gap_report, mappings)
     assert plan.metadata.title
-    assert plan.metadata.oscal_version == "1.1.2"
+    assert getattr(plan.metadata.oscal_version, "__root__", plan.metadata.oscal_version) == "1.1.2"
 
 
 def test_ssp_has_import_profile():

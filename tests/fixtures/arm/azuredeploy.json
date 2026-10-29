@@ -1,0 +1,106 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": {
+      "type": "string",
+      "defaultValue": "usgovvirginia"
+    },
+    "storageName": {
+      "type": "string",
+      "defaultValue": "auditlogsstore"
+    },
+    "httpsOnly": {
+      "type": "bool",
+      "defaultValue": true
+    },
+    "sqlAdminPassword": {
+      "type": "securestring",
+      "defaultValue": "NotARealPassword123!"
+    }
+  },
+  "variables": {
+    "logRetentionDays": 365
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "apiVersion": "2023-01-01",
+      "name": "[parameters('storageName')]",
+      "location": "[parameters('location')]",
+      "sku": { "name": "Standard_GRS" },
+      "kind": "StorageV2",
+      "properties": {
+        "supportsHttpsTrafficOnly": "[parameters('httpsOnly')]",
+        "minimumTlsVersion": "TLS1_2",
+        "allowBlobPublicAccess": false,
+        "networkAcls": { "defaultAction": "Deny", "bypass": "AzureServices" }
+      },
+      "resources": [
+        {
+          "type": "blobServices",
+          "apiVersion": "2023-01-01",
+          "name": "default",
+          "dependsOn": ["[parameters('storageName')]"],
+          "properties": {
+            "isVersioningEnabled": true,
+            "deleteRetentionPolicy": { "enabled": true, "days": 30 }
+          }
+        }
+      ]
+    },
+    {
+      "type": "Microsoft.KeyVault/vaults",
+      "apiVersion": "2023-07-01",
+      "name": "app-kv",
+      "location": "[parameters('location')]",
+      "properties": {
+        "tenantId": "[subscription().tenantId]",
+        "sku": { "family": "A", "name": "premium" },
+        "enableRbacAuthorization": true,
+        "enablePurgeProtection": true,
+        "publicNetworkAccess": "Disabled"
+      }
+    },
+    {
+      "type": "Microsoft.Sql/servers",
+      "apiVersion": "2023-05-01-preview",
+      "name": "app-sql",
+      "location": "[parameters('location')]",
+      "properties": {
+        "administratorLogin": "sqladmin",
+        "administratorLoginPassword": "[parameters('sqlAdminPassword')]",
+        "minimalTlsVersion": "1.2",
+        "publicNetworkAccess": "Disabled"
+      },
+      "resources": [
+        {
+          "type": "auditingSettings",
+          "apiVersion": "2023-05-01-preview",
+          "name": "default",
+          "properties": { "state": "Enabled", "retentionDays": 90 }
+        }
+      ]
+    },
+    {
+      "type": "Microsoft.Network/networkSecurityGroups",
+      "apiVersion": "2023-09-01",
+      "name": "app-nsg",
+      "location": "[parameters('location')]",
+      "properties": { "securityRules": [] }
+    },
+    {
+      "type": "Microsoft.OperationalInsights/workspaces",
+      "apiVersion": "2022-10-01",
+      "name": "app-logs",
+      "location": "[parameters('location')]",
+      "properties": { "retentionInDays": "[variables('logRetentionDays')]" }
+    },
+    {
+      "type": "Microsoft.Security/pricings",
+      "apiVersion": "2023-01-01",
+      "name": "VirtualMachines",
+      "properties": { "pricingTier": "Standard" }
+    }
+  ]
+}

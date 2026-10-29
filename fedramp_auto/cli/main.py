@@ -5,7 +5,7 @@ Command-line interface for FedRAMP-Auto.
 
 Commands
 --------
-  scan      Ingest a directory of Terraform files and run full analysis.
+  scan      Ingest a directory of Terraform / Azure ARM files and run full analysis.
   report    Print or export a gap report from a previous scan result.
   validate  Run the FedRAMP OSCAL schema validator against an SSP file.
 
@@ -79,7 +79,12 @@ def _print_gap_table(gaps: list[dict]) -> None:
 
 @app.command()
 def scan(
-    infra_dir: Annotated[Path, typer.Argument(help="Directory containing Terraform .tf files")],
+    infra_dir: Annotated[
+        Path, typer.Argument(help="Directory containing Terraform .tf files and/or ARM templates")
+    ],
+    iac_format: Annotated[
+        str, typer.Option("--format", "-f", help="IaC format: auto | terraform | arm")
+    ] = "auto",
     baseline: Annotated[str, typer.Option("--baseline", "-b", help="FedRAMP baseline: low | moderate")] = "low",
     output: Annotated[Path, typer.Option("--output", "-o", help="Directory to write scan results")] = Path("./output"),
     model: Annotated[str, typer.Option("--model", "-m", help="Ollama model name")] = "mistral",
@@ -88,15 +93,20 @@ def scan(
     verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False,
 ) -> None:
     """
-    Scan a Terraform directory for FedRAMP compliance gaps.
+    Scan an infrastructure-as-code directory for FedRAMP compliance gaps.
 
-    Parses all .tf files, maps resources to NIST 800-53 controls, identifies
-    missing Key Security Indicators, and generates remediation advice.
+    Parses all .tf files and Azure ARM templates (*.json), maps resources to
+    NIST 800-53 controls, identifies missing Key Security Indicators, and
+    generates remediation advice.
     """
     _setup_logging(verbose)
 
     if baseline not in ("low", "moderate"):
         err_console.print("[red]--baseline must be 'low' or 'moderate'[/red]")
+        raise typer.Exit(1)
+
+    if iac_format not in ("auto", "terraform", "arm"):
+        err_console.print("[red]--format must be 'auto', 'terraform', or 'arm'[/red]")
         raise typer.Exit(1)
 
     if not infra_dir.exists():
@@ -106,7 +116,8 @@ def scan(
     output.mkdir(parents=True, exist_ok=True)
 
     # Lazy imports so CLI loads fast even without all deps installed
-    from fedramp_auto.parser.terraform import parse_directory
+    from fedramp_auto.parser import arm, terraform
+    from fedramp_auto.parser.terraform import ParseResult
     from fedramp_auto.mapper.control_mapper import ControlMapper
     from fedramp_auto.gaps.detector import detect_gaps
     from fedramp_auto.advisor.remediation import RemediationAdvisor
@@ -115,6 +126,7 @@ def scan(
     console.print(Panel(
         f"[bold]FedRAMP-Auto[/bold] · scan\n"
         f"  Directory : {infra_dir.resolve()}\n"
+        f"  Format    : {iac_format}\n"
         f"  Baseline  : {baseline.upper()}\n"
         f"  Model     : {'disabled (--no-llm)' if no_llm else model}\n"
         f"  Output    : {output.resolve()}",
@@ -124,8 +136,13 @@ def scan(
     with Progress(SpinnerColumn(), TextColumn("{task.description}"), console=console) as progress:
 
         # 1. Parse
-        task = progress.add_task("Parsing Terraform files...", total=None)
-        parse_result = parse_directory(infra_dir)
+        task = progress.add_task("Parsing infrastructure files...", total=None)
+        parse_result = ParseResult()
+        parsers = {"terraform": [terraform], "arm": [arm]}.get(iac_format, [terraform, arm])
+        for parser in parsers:
+            partial = parser.parse_directory(infra_dir)
+            parse_result.resources.extend(partial.resources)
+            parse_result.errors.extend(partial.errors)
         progress.update(task, description=f"[green]Parsed {len(parse_result.resources)} resource(s)[/green]")
 
         if parse_result.errors:
