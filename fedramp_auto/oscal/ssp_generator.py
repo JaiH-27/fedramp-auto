@@ -79,6 +79,34 @@ def _oscal_control_id(control_id: str) -> str:
     return cid
 
 
+# ── Cloud providers ───────────────────────────────────────────────────────────
+# Resource-type prefix → (provider key, component title, description)
+
+_PROVIDERS: dict[str, tuple[str, str]] = {
+    "aws": (
+        "Amazon Web Services (AWS)",
+        "AWS cloud infrastructure providing compute, storage, networking, "
+        "and security services within the FedRAMP authorization boundary.",
+    ),
+    "azure": (
+        "Microsoft Azure",
+        "Azure cloud infrastructure providing compute, storage, networking, "
+        "and security services within the FedRAMP authorization boundary.",
+    ),
+}
+
+
+def _provider_for(resource_type: str) -> str:
+    return "azure" if resource_type.lower().startswith("microsoft.") else "aws"
+
+
+def _component_title(resource_type: str) -> str:
+    """aws_s3_bucket → "AWS S3 Bucket"; Microsoft.Storage/storageAccounts → "Azure Storage/storageAccounts"."""
+    if _provider_for(resource_type) == "azure":
+        return "Azure " + resource_type.split(".", 1)[1]
+    return resource_type.replace("aws_", "AWS ").replace("_", " ").title()
+
+
 # ── SSP builder ───────────────────────────────────────────────────────────────
 
 @dataclass
@@ -124,7 +152,6 @@ def build_ssp(
     ssp_uuid = _uuid()
     org_party_uuid = _uuid()
     owner_role_uuid = "system-owner"
-    aws_component_uuid = _uuid()
     this_system_uuid = _uuid()
 
     # ── Metadata ──────────────────────────────────────────────────────────────
@@ -139,7 +166,7 @@ def build_ssp(
             common.Role(id="authorizing-official", title="Authorizing Official"),
         ],
         parties=[
-            common.Parties(
+            common.Party(
                 uuid=org_party_uuid,
                 type="organization",
                 name=si.org_name,
@@ -224,37 +251,42 @@ def build_ssp(
             description="The overall system boundary as defined in the authorization boundary.",
             status=common.Status(state="operational"),
         ),
-        # AWS cloud component
-        common.SystemComponent(
-            uuid=aws_component_uuid,
-            type="service",
-            title="Amazon Web Services (AWS)",
-            description=(
-                "AWS cloud infrastructure providing compute, storage, networking, "
-                "and security services within the FedRAMP authorization boundary."
-            ),
-            status=common.Status(state="operational"),
-            props=[
-                _fedramp_prop("implementation-point", "external"),
-                _fedramp_prop("leveraged-authorization-uuid", _uuid()),
-                _prop("inherited-uuid", _uuid()),
-            ],
-        ),
     ]
+
+    # One leveraged cloud-provider component per provider in the scan (AWS if none)
+    providers = sorted({_provider_for(rt) for rt in resource_types}) or ["aws"]
+    provider_uuids: dict[str, str] = {}
+    for provider in providers:
+        provider_uuids[provider] = _uuid()
+        title, description = _PROVIDERS[provider]
+        components.append(
+            common.SystemComponent(
+                uuid=provider_uuids[provider],
+                type="service",
+                title=title,
+                description=description,
+                status=common.Status(state="operational"),
+                props=[
+                    _fedramp_prop("implementation-point", "external"),
+                    _fedramp_prop("leveraged-authorization-uuid", _uuid()),
+                    _prop("inherited-uuid", _uuid()),
+                ],
+            )
+        )
 
     # Add one component per resource type found
     resource_type_uuids: dict[str, str] = {}
     for rt in resource_types:
         comp_uuid = _uuid()
         resource_type_uuids[rt] = comp_uuid
-        # Human-friendly title: aws_s3_bucket → "AWS S3 Bucket"
-        title = rt.replace("aws_", "AWS ").replace("_", " ").title()
+        title = _component_title(rt)
+        source = "ARM-template" if _provider_for(rt) == "azure" else "Terraform"
         components.append(
             common.SystemComponent(
                 uuid=comp_uuid,
                 type="software",
                 title=title,
-                description=f"Terraform-managed {title} resource(s) within the system boundary.",
+                description=f"{source}-managed {title} resource(s) within the system boundary.",
                 status=common.Status(state="operational"),
                 props=[
                     _prop("resource-type", rt),
@@ -323,7 +355,7 @@ def build_ssp(
                 "Manual implementation statement required."
             )
 
-        # Build by_components referencing the relevant AWS components
+        # Build by_components referencing the relevant resource components
         by_components: list[ssp_model.ByComponent] = []
         seen_types: set[str] = set()
         for ev in evidence_list:
@@ -331,7 +363,7 @@ def build_ssp(
             if rt in seen_types:
                 continue
             seen_types.add(rt)
-            comp_uuid = resource_type_uuids.get(rt, aws_component_uuid)
+            comp_uuid = resource_type_uuids.get(rt, this_system_uuid)
             impl_status = (
                 common.ImplementationStatus(state="implemented")
                 if is_satisfied
