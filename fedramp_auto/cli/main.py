@@ -12,6 +12,7 @@ Commands
 Usage
 -----
   fedramp-auto scan ./infra --baseline low --output ./output
+  fedramp-auto scan ./azure-infra --cloud azure
   fedramp-auto report ./output/scan_result.json
   fedramp-auto validate ./output/ssp.json
 """
@@ -52,6 +53,9 @@ def _setup_logging(verbose: bool) -> None:
     )
 
 
+_CLOUD_LABELS = {"aws": "AWS · aws provider", "azure": "Azure · azurerm provider"}
+
+
 def _severity_colour(severity: str) -> str:
     return {"critical": "red", "high": "orange3", "medium": "yellow", "low": "cyan"}.get(
         severity, "white"
@@ -86,6 +90,9 @@ def scan(
         str, typer.Option("--format", "-f", help="IaC format: auto | terraform | arm")
     ] = "auto",
     baseline: Annotated[str, typer.Option("--baseline", "-b", help="FedRAMP baseline: low | moderate")] = "low",
+    cloud: Annotated[
+        str, typer.Option("--cloud", "-c", help="Remediation snippet target: auto | aws | azure")
+    ] = "auto",
     output: Annotated[Path, typer.Option("--output", "-o", help="Directory to write scan results")] = Path("./output"),
     model: Annotated[str, typer.Option("--model", "-m", help="Ollama model name")] = "mistral",
     ollama_url: Annotated[str, typer.Option("--ollama-url", help="Ollama API base URL")] = "http://localhost:11434",
@@ -109,6 +116,10 @@ def scan(
         err_console.print("[red]--format must be 'auto', 'terraform', or 'arm'[/red]")
         raise typer.Exit(1)
 
+    if cloud not in ("auto", "aws", "azure"):
+        err_console.print("[red]--cloud must be 'auto', 'aws', or 'azure'[/red]")
+        raise typer.Exit(1)
+
     if not infra_dir.exists():
         err_console.print(f"[red]Directory not found: {infra_dir}[/red]")
         raise typer.Exit(1)
@@ -120,13 +131,14 @@ def scan(
     from fedramp_auto.parser.terraform import ParseResult
     from fedramp_auto.mapper.control_mapper import ControlMapper
     from fedramp_auto.gaps.detector import detect_gaps
-    from fedramp_auto.advisor.remediation import RemediationAdvisor
+    from fedramp_auto.advisor.remediation import RemediationAdvisor, detect_cloud
     from fedramp_auto.oscal.ssp_generator import generate_ssp
 
     console.print(Panel(
         f"[bold]FedRAMP-Auto[/bold] · scan\n"
         f"  Directory : {infra_dir.resolve()}\n"
         f"  Format    : {iac_format}\n"
+        f"  Cloud     : {cloud}\n"
         f"  Baseline  : {baseline.upper()}\n"
         f"  Model     : {'disabled (--no-llm)' if no_llm else model}\n"
         f"  Output    : {output.resolve()}",
@@ -171,8 +183,11 @@ def scan(
         ))
 
         # 4. Remediation advice
-        progress.update(task, description="Generating remediation advice...")
-        advisor = RemediationAdvisor(model=model, base_url=ollama_url, llm_fallback=not no_llm)
+        snippet_cloud = detect_cloud(parse_result.resources) if cloud == "auto" else cloud
+        progress.update(task, description=f"Generating remediation advice ({snippet_cloud})...")
+        advisor = RemediationAdvisor(
+            model=model, base_url=ollama_url, llm_fallback=not no_llm, cloud=snippet_cloud
+        )
         advices = advisor.advise(gap_report.gaps)
 
     # ── Print summary ──────────────────────────────────────────────────────────
@@ -196,6 +211,7 @@ def scan(
     # ── Save JSON result ───────────────────────────────────────────────────────
     scan_result = {
         "baseline": baseline,
+        "cloud": snippet_cloud,
         "coverage_pct": gap_report.coverage_pct,
         "satisfied_ksi_count": len(gap_report.satisfied_ksis),
         "total_ksi_count": gap_report.total_ksis,
@@ -227,6 +243,7 @@ def scan(
                 "remediation_action": a.remediation_action,
                 "terraform_snippet": a.terraform_snippet,
                 "source": a.source,
+                "cloud": a.cloud,
             }
             for a in advices
         ],
@@ -243,6 +260,7 @@ def scan(
     md_lines = [
         f"# FedRAMP-Auto scan report\n",
         f"**Baseline:** {baseline.upper()}  ",
+        f"**Remediation target:** {_CLOUD_LABELS[snippet_cloud]}  ",
         f"**KSI coverage:** {gap_report.coverage_pct}% ({len(gap_report.satisfied_ksis)}/{gap_report.total_ksis})  ",
         f"**Critical gaps:** {len(gap_report.critical_gaps)}  ",
         f"**Total gaps:** {len(gap_report.gaps)}\n",
@@ -258,7 +276,7 @@ def scan(
         md_lines.append(f"### {a.ksi_id}")
         md_lines.append(f"**Risk:** {a.risk_explanation}\n")
         md_lines.append(f"**Action:** {a.remediation_action}\n")
-        md_lines.append("**Terraform:**\n```hcl")
+        md_lines.append(f"**Terraform ({_CLOUD_LABELS[a.cloud]}):**\n```hcl")
         md_lines.append(a.terraform_snippet)
         md_lines.append("```\n")
 
@@ -294,6 +312,7 @@ def report(
     console.print(Panel(
         f"[bold]Scan report[/bold] · {result_file}\n"
         f"  Baseline  : {data.get('baseline', '?').upper()}\n"
+        f"  Cloud     : {data.get('cloud', 'aws')}\n"
         f"  Coverage  : {data.get('coverage_pct', 0)}%"
         f" ({data.get('satisfied_ksi_count', 0)}/{data.get('total_ksi_count', 0)} KSIs)\n"
         f"  Gaps      : {len(data.get('gaps', []))}",
@@ -306,7 +325,7 @@ def report(
 
     if show_remediations:
         for rem in data.get("remediations", []):
-            console.print(f"\n[bold]{rem['ksi_id']}[/bold]")
+            console.print(f"\n[bold]{rem['ksi_id']}[/bold] [dim]({rem.get('cloud', 'aws')})[/dim]")
             console.print(f"[dim]{rem['risk_explanation']}[/dim]")
             console.print(f"\n{rem['remediation_action']}\n")
             console.print("```hcl")
