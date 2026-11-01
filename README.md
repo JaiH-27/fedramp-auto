@@ -21,7 +21,7 @@ Mistral 7B (Ollama)      ← maps resources to NIST 800-53 controls
 KSI gap detector         ← compares against 56 (Low) / 61 (Moderate) FedRAMP KSIs
      │
      ▼
-Remediation advisor      ← plain-English fixes + Terraform snippets per gap
+Remediation advisor      ← plain-English fixes + Terraform snippets per gap (aws / azurerm)
      │
      ▼
 OSCAL SSP (JSON)         ← OSCAL 1.1.2 draft for review and completion
@@ -129,6 +129,7 @@ Arguments:
 Options:
   --format    -f   auto | terraform | arm     [default: auto]
   --baseline  -b   low | moderate            [default: low]
+  --cloud     -c   auto | aws | azure        [default: auto]
   --output    -o   Output directory           [default: ./output]
   --model     -m   Ollama model name          [default: mistral]
   --ollama-url     Ollama API URL             [default: http://localhost:11434]
@@ -148,8 +149,22 @@ templates (`languageVersion: 2.0`, as emitted by Bicep) are supported, and simpl
 `[parameters('x')]` / `[variables('x')]` references are resolved from defaults so
 the static rules see real settings. `secureString` parameters are never resolved.
 
-To scan Bicep, compile first: `az bicep build --file main.bicep`. Remediation
-snippets are currently Terraform (`azurerm` equivalents are on the roadmap).
+To scan Bicep, compile first: `az bicep build --file main.bicep`.
+
+### Remediation snippets: AWS or Azure
+
+Remediation snippets are Terraform for either the `aws` or the `azurerm`
+provider. With `--cloud auto` (the default) the target is picked from the
+scanned resources: if `azurerm_*` / `Microsoft.*` resources outnumber `aws_*`
+ones you get `azurerm` snippets, otherwise `aws`. Force a target with
+`--cloud azure` or `--cloud aws`.
+
+Static `azurerm` snippets cover the same KSIs as the AWS library — data at rest
+(Key Vault CMK, storage infrastructure encryption, SQL TDE, disk encryption sets),
+TLS 1.2+ in transit, Activity Log → Log Analytics, VNet/NSG boundaries, Defender
+for Cloud scanning, Sentinel monitoring and Recovery Services backups. Other gaps
+fall back to the LLM, which is prompted for the selected provider. The chosen
+cloud is recorded in `scan_result.json` (`cloud`, and per remediation).
 
 ### `fedramp-auto report`
 
@@ -193,7 +208,7 @@ Add to your GitHub Actions workflow to block PRs that introduce critical complia
 | `fedramp_auto.parser.arm` | Parses Azure ARM JSON templates into the same model |
 | `fedramp_auto.mapper.control_mapper` | Static rules + Mistral 7B → NIST 800-53 controls |
 | `fedramp_auto.gaps.detector` | 56/61 KSI gap analysis |
-| `fedramp_auto.advisor.remediation` | Per-gap fix guidance + Terraform snippets |
+| `fedramp_auto.advisor.remediation` | Per-gap fix guidance + Terraform snippets (`aws` / `azurerm`) |
 | `fedramp_auto.oscal` | OSCAL SSP generation via `compliance-trestle` |
 | `fedramp_auto.cli.main` | Typer CLI (scan / report / validate) |
 
@@ -215,7 +230,7 @@ Add to your GitHub Actions workflow to block PRs that introduce critical complia
 - [x] Phase 4: CLI (scan / report / validate)
 - [x] Phase 3: OSCAL SSP generator (compliance-trestle integration)
 - [x] Azure ARM template support
-- [ ] Azure (`azurerm`) remediation snippets
+- [x] Azure (`azurerm`) remediation snippets
 - [ ] AWS CDK support
 - [ ] GitHub App for automated PR comments
 - [ ] Web dashboard
