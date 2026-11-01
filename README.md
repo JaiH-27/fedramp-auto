@@ -227,8 +227,8 @@ Add to your GitHub Actions workflow to block PRs that introduce critical complia
 
 - [x] Phase 1: Terraform parser + project scaffold
 - [x] Phase 2: Control mapper + KSI gap detector + remediation advisor
-- [x] Phase 4: CLI (scan / report / validate)
 - [x] Phase 3: OSCAL SSP generator (compliance-trestle integration)
+- [x] Phase 4: CLI (scan / report / validate)
 - [x] Azure ARM template support
 - [x] Azure (`azurerm`) remediation snippets
 - [ ] AWS CDK support
