@@ -236,7 +236,7 @@ resource "aws_securityhub_account" "main" {}
 resource "aws_securityhub_standards_subscription" "fedramp" {
   standards_arn = "arn:aws:securityhub:us-east-1::standards/aws-foundational-security-best-practices/v/1.0.0"
   depends_on    = [aws_securityhub_account.main]
-}""",
+}""",  # noqa: E501 (ARN cannot wrap)
     },
 
     "KSI-SI-2": {
@@ -723,7 +723,7 @@ Provide a remediation plan in the following JSON format exactly:
   "terraform_snippet": "Working Terraform HCL ({provider} provider) that would satisfy the control"
 }}
 
-Respond ONLY with the JSON object. No explanation outside the JSON."""
+Respond ONLY with the JSON object. No explanation outside the JSON."""  # noqa: E501
 
 
 def _call_llm_for_remediation(

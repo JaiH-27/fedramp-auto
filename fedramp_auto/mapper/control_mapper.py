@@ -729,7 +729,7 @@ Response:
   {"control_id": "CM-6", "control_name": "Configuration Settings", "rationale": "Config recorder detects configuration drift from baseline settings."},
   {"control_id": "AU-12", "control_name": "Audit Record Generation", "rationale": "Config records configuration change history as auditable records."}
 ]
-""".strip()
+""".strip()  # noqa: E501
 
 
 def _build_llm_prompt(resource: ParsedResource) -> str:
@@ -745,7 +745,7 @@ Attributes:
 
 Respond ONLY with a JSON array. Each item must have exactly these fields: "control_id", "control_name", "rationale".
 Only include controls that are clearly satisfied by the resource configuration.
-Do not include any explanation outside the JSON array."""
+Do not include any explanation outside the JSON array."""  # noqa: E501
 
 
 def _call_llm(prompt: str, model: str, base_url: str, timeout: int) -> list[ControlMapping]:

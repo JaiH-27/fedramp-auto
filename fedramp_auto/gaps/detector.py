@@ -11,10 +11,9 @@ Source: FedRAMP 20x Phase 1 pilot documentation + RFC-0024 guidance.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Literal
-
 
 # ── Severity ──────────────────────────────────────────────────────────────────
 

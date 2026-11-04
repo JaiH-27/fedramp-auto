@@ -6,9 +6,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pytest
+
 from fedramp_auto.parser.terraform import (
     ParseResult,
-    ParsedResource,
     _sanitize_value,
     parse_directory,
     parse_file,

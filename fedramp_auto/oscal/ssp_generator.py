@@ -20,16 +20,15 @@ from __future__ import annotations
 import json
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from trestle.oscal import ssp as ssp_model
 from trestle.oscal import common
+from trestle.oscal import ssp as ssp_model
 
 from fedramp_auto.gaps.detector import GapReport
 from fedramp_auto.mapper.control_mapper import ResourceMapping
-
 
 # ── FedRAMP baseline profile URIs ────────────────────────────────────────────
 _FEDRAMP_PROFILE_URIS = {
@@ -65,7 +64,7 @@ def _fedramp_prop(name: str, value: str) -> common.Property:
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 # ── Control ID normalisation ──────────────────────────────────────────────────

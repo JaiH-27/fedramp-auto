@@ -5,9 +5,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from fedramp_auto.gaps.detector import GapReport, Severity, detect_gaps, all_ksi_ids
 from fedramp_auto.advisor.remediation import RemediationAdvisor
-
+from fedramp_auto.gaps.detector import GapReport, Severity, all_ksi_ids, detect_gaps
 
 # ── Gap detector tests ────────────────────────────────────────────────────────
 
@@ -66,7 +65,7 @@ def test_sc28_satisfied_by_sc28():
 def test_gap_report_summary_lines():
     report = detect_gaps(["SC-28"], baseline="low")
     lines = report.summary_lines()
-    assert any("coverage" in l.lower() for l in lines)
+    assert any("coverage" in line.lower() for line in lines)
 
 
 def test_gaps_by_severity_has_all_keys():
