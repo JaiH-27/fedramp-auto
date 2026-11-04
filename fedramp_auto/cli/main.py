@@ -13,6 +13,7 @@ Usage
 -----
   fedramp-auto scan ./infra --baseline low --output ./output
   fedramp-auto scan ./azure-infra --cloud azure
+  fedramp-auto scan ./my-cdk-app --format cdk          # after `cdk synth`
   fedramp-auto report ./output/scan_result.json
   fedramp-auto validate ./output/ssp.json
 """
@@ -84,7 +85,14 @@ def _setup_logging(verbose: bool) -> None:
     )
 
 
-_CLOUD_LABELS = {"aws": "AWS · aws provider", "azure": "Azure · azurerm provider"}
+_CLOUD_LABELS = {
+    "aws": "AWS · aws provider",
+    "azure": "Azure · azurerm provider",
+    "cdk": "AWS · CDK v2 (TypeScript)",
+}
+
+# Heading for a remediation snippet in reports, by snippet language
+_SNIPPET_HEADINGS = {"hcl": "Terraform", "typescript": "AWS CDK"}
 
 
 def _severity_colour(severity: str) -> str:
@@ -127,7 +135,8 @@ def scan(
         str, typer.Option("--baseline", "-b", help="FedRAMP baseline: low | moderate")
     ] = "low",
     cloud: Annotated[
-        str, typer.Option("--cloud", "-c", help="Remediation snippet target: auto | aws | azure")
+        str,
+        typer.Option("--cloud", "-c", help="Remediation snippet target: auto | aws | azure | cdk"),
     ] = "auto",
     output: Annotated[
         Path, typer.Option("--output", "-o", help="Directory to write scan results")
@@ -159,8 +168,8 @@ def scan(
         err_console.print("[red]--format must be 'auto', 'terraform', 'arm', or 'cdk'[/red]")
         raise typer.Exit(1)
 
-    if cloud not in ("auto", "aws", "azure"):
-        err_console.print("[red]--cloud must be 'auto', 'aws', or 'azure'[/red]")
+    if cloud not in ("auto", "aws", "azure", "cdk"):
+        err_console.print("[red]--cloud must be 'auto', 'aws', 'azure', or 'cdk'[/red]")
         raise typer.Exit(1)
 
     if not infra_dir.exists():
@@ -292,6 +301,7 @@ def scan(
                 "risk_explanation": a.risk_explanation,
                 "remediation_action": a.remediation_action,
                 "terraform_snippet": a.terraform_snippet,
+                "snippet_language": a.snippet_language,
                 "source": a.source,
                 "cloud": a.cloud,
             }
@@ -327,7 +337,8 @@ def scan(
         md_lines.append(f"### {a.ksi_id}")
         md_lines.append(f"**Risk:** {a.risk_explanation}\n")
         md_lines.append(f"**Action:** {a.remediation_action}\n")
-        md_lines.append(f"**Terraform ({_CLOUD_LABELS[a.cloud]}):**\n```hcl")
+        heading = _SNIPPET_HEADINGS[a.snippet_language]
+        md_lines.append(f"**{heading} ({_CLOUD_LABELS[a.cloud]}):**\n```{a.snippet_language}")
         md_lines.append(a.terraform_snippet)
         md_lines.append("```\n")
 
@@ -381,7 +392,8 @@ def report(
             console.print(f"\n[bold]{rem['ksi_id']}[/bold] [dim]({rem.get('cloud', 'aws')})[/dim]")
             console.print(f"[dim]{rem['risk_explanation']}[/dim]")
             console.print(f"\n{rem['remediation_action']}\n")
-            console.print("```hcl")
+            # Results saved before snippet_language existed are always HCL
+            console.print(f"```{rem.get('snippet_language', 'hcl')}")
             console.print(rem["terraform_snippet"])
             console.print("```")
 
