@@ -353,7 +353,8 @@ resource "azurerm_key_vault_key" "cmk" {
     automatic {
       time_before_expiry = "P30D"
     }
-    expire_after = "P1Y"
+    expire_after         = "P1Y"
+    notify_before_expiry = "P29D"
   }
 }
 
@@ -489,7 +490,7 @@ resource "azurerm_monitor_diagnostic_setting" "key_vault" {
   enabled_log {
     category_group = "audit"
   }
-  metric {
+  enabled_metric {
     category = "AllMetrics"
   }
 }""",
@@ -650,7 +651,7 @@ resource "azurerm_monitor_activity_log_alert" "defender_high" {
             "requires system and user-level data backups with tested recovery procedures."
         ),
         "action": (
-            "Create a Recovery Services vault with soft delete and geo-redundant storage, "
+            "Create a geo-redundant Recovery Services vault (soft delete is on by default), "
             "a daily VM backup policy retaining at least 35 days, and protect every "
             "critical VM. Azure SQL keeps point-in-time backups; set short-term "
             "retention to 35 days."
@@ -662,7 +663,7 @@ resource "azurerm_recovery_services_vault" "main" {
   location            = azurerm_resource_group.main.location
   sku                 = "Standard"
   storage_mode_type   = "GeoRedundant"
-  soft_delete_enabled = true
+  # soft delete is always on for new vaults (Azure secure-by-default)
 }
 
 resource "azurerm_backup_policy_vm" "daily" {
