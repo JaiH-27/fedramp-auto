@@ -4,11 +4,12 @@ fedramp_auto.advisor.remediation
 Given a FedRAMP KSI gap, uses Mistral 7B to generate:
   1. Plain-English explanation of the risk
   2. Specific remediation action
-  3. Terraform code snippet that would satisfy the control
+  3. Code snippet that would satisfy the control
 
-Snippets target the cloud the scanned infrastructure runs on: ``aws``
-(the ``aws`` provider) or ``azure`` (the ``azurerm`` provider).  Use
-:func:`detect_cloud` to pick one from parsed resources.
+Snippets target the tooling the scanned infrastructure uses: ``aws``
+(Terraform, ``aws`` provider), ``azure`` (Terraform, ``azurerm`` provider)
+or ``cdk`` (AWS CDK v2, TypeScript).  Use :func:`detect_cloud` to pick one
+from parsed resources.
 
 Uses a static fallback library for the most common gaps so a Mistral
 instance isn't strictly required to get useful output during development.
@@ -30,8 +31,13 @@ from fedramp_auto.gaps.detector import ControlGap
 if TYPE_CHECKING:
     from fedramp_auto.parser.terraform import ParsedResource
 
-Cloud = Literal["aws", "azure"]
-SUPPORTED_CLOUDS: tuple[str, ...] = ("aws", "azure")
+Cloud = Literal["aws", "azure", "cdk"]
+SUPPORTED_CLOUDS: tuple[str, ...] = ("aws", "azure", "cdk")
+
+# Language of the snippets each target produces (used for code fences)
+SNIPPET_LANGUAGE: dict[str, str] = {"aws": "hcl", "azure": "hcl", "cdk": "typescript"}
+
+_COMMENT_PREFIX: dict[str, str] = {"hcl": "#", "typescript": "//"}
 
 log = logging.getLogger(__name__)
 
@@ -44,9 +50,12 @@ class RemediationAdvice:
     control_ids: list[str]
     risk_explanation: str
     remediation_action: str
+    # Historical name: holds HCL for aws/azure and TypeScript for cdk.
+    # Check snippet_language rather than assuming Terraform.
     terraform_snippet: str
     source: str   # "static" | "llm" | "generic"
-    cloud: str = "aws"   # "aws" | "azure" — provider the snippet targets
+    cloud: str = "aws"   # "aws" | "azure" | "cdk" — what the snippet targets
+    snippet_language: str = "hcl"   # "hcl" | "typescript"
 
 
 # ── Static remediation library ────────────────────────────────────────────────
@@ -696,17 +705,33 @@ resource "azurerm_mssql_database" "example" {
     },
 }
 
+# ── Static remediation library: AWS CDK (TypeScript) ──────────────────────────
+# Populated in a follow-up; until then CDK gaps use the LLM / generic fallback.
+
+_STATIC_REMEDIATIONS_CDK: dict[str, dict[str, str]] = {}
+
+_LIBRARIES: dict[str, dict[str, dict[str, str]]] = {
+    "aws": _STATIC_REMEDIATIONS,
+    "azure": _STATIC_REMEDIATIONS_AZURE,
+    "cdk": _STATIC_REMEDIATIONS_CDK,
+}
+
+
 # ── LLM prompt ────────────────────────────────────────────────────────────────
 
 _CLOUD_PROMPT_NAMES: dict[str, tuple[str, str]] = {
-    # cloud: (display name, Terraform provider)
-    "aws": ("AWS", "aws"),
-    "azure": ("Azure", "azurerm"),
+    # cloud: (display name, what the snippet must be)
+    "aws": ("AWS", "Working Terraform HCL (aws provider)"),
+    "azure": ("Azure", "Working Terraform HCL (azurerm provider)"),
+    "cdk": (
+        "AWS",
+        "Working AWS CDK v2 TypeScript (aws-cdk-lib imports, then code for a Stack constructor)",
+    ),
 }
 
 
 def _build_remediation_prompt(gap: ControlGap, cloud: str = "aws") -> str:
-    cloud_name, provider = _CLOUD_PROMPT_NAMES[cloud]
+    cloud_name, snippet_kind = _CLOUD_PROMPT_NAMES[cloud]
     controls_str = ", ".join(gap.ksi.control_ids)
     return f"""You are a FedRAMP compliance engineer. A cloud infrastructure gap has been identified.
 
@@ -720,7 +745,7 @@ Provide a remediation plan in the following JSON format exactly:
 {{
   "risk_explanation": "2-3 sentence plain-English explanation of the security risk",
   "remediation_action": "Specific step-by-step action to take in {cloud_name}",
-  "terraform_snippet": "Working Terraform HCL ({provider} provider) that would satisfy the control"
+  "snippet": "{snippet_kind} that would satisfy the control"
 }}
 
 Respond ONLY with the JSON object. No explanation outside the JSON."""  # noqa: E501
@@ -775,7 +800,7 @@ class RemediationAdvisor:
 
     Usage
     -----
-    advisor = RemediationAdvisor(cloud="azure")   # or "aws" (default)
+    advisor = RemediationAdvisor(cloud="azure")   # or "aws" (default) / "cdk"
     advices = advisor.advise(gap_report.gaps)
     for advice in advices:
         print(advice.ksi_id)
@@ -799,18 +824,20 @@ class RemediationAdvisor:
     def advise_gap(self, gap: ControlGap) -> RemediationAdvice:
         """Generate remediation advice for a single gap."""
 
+        language = SNIPPET_LANGUAGE[self.cloud]
+
         # Layer 1: static library (instant, no LLM needed)
-        library = _STATIC_REMEDIATIONS_AZURE if self.cloud == "azure" else _STATIC_REMEDIATIONS
-        static = library.get(gap.ksi.ksi_id)
+        static = _LIBRARIES[self.cloud].get(gap.ksi.ksi_id)
         if static:
             return RemediationAdvice(
                 ksi_id=gap.ksi.ksi_id,
                 control_ids=list(gap.ksi.control_ids),
                 risk_explanation=static["risk"],
                 remediation_action=static["action"],
-                terraform_snippet=static["terraform"],
+                terraform_snippet=static.get("snippet") or static["terraform"],
                 source="static",
                 cloud=self.cloud,
+                snippet_language=language,
             )
 
         # Layer 2: LLM fallback
@@ -823,9 +850,11 @@ class RemediationAdvisor:
                     control_ids=list(gap.ksi.control_ids),
                     risk_explanation=result.get("risk_explanation", ""),
                     remediation_action=result.get("remediation_action", ""),
-                    terraform_snippet=result.get("terraform_snippet", ""),
+                    # "snippet" is the current prompt key; accept the old one too
+                    terraform_snippet=result.get("snippet") or result.get("terraform_snippet", ""),
                     source="llm",
                     cloud=self.cloud,
+                    snippet_language=language,
                 )
 
         # Fallback: generic advice
@@ -837,9 +866,13 @@ class RemediationAdvisor:
                 f"Implement controls {', '.join(gap.ksi.control_ids)} "
                 f"to satisfy {gap.ksi.ksi_id}: {gap.ksi.title}."
             ),
-            terraform_snippet="# No automated snippet available — consult FedRAMP documentation.",
+            terraform_snippet=(
+                f"{_COMMENT_PREFIX[language]} No automated snippet available — "
+                "consult FedRAMP documentation."
+            ),
             source="generic",
             cloud=self.cloud,
+            snippet_language=language,
         )
 
     def advise(self, gaps: list[ControlGap]) -> list[RemediationAdvice]:
