@@ -1,0 +1,184 @@
+name: FedRAMP-Auto scan
+description: >
+  Scan Terraform, Azure ARM or AWS CDK (cdk.out) for FedRAMP 20x KSI gaps, compare
+  with the base branch, and comment the result on the pull request.
+author: JaiH-27
+branding:
+  icon: shield
+  color: blue
+
+inputs:
+  path:
+    description: Directory to scan, relative to the repository root.
+    default: "."
+  format:
+    description: "IaC format: auto | terraform | arm | cdk (run `cdk synth` before this action)."
+    default: auto
+  baseline:
+    description: "FedRAMP baseline: low | moderate."
+    default: low
+  cloud:
+    description: "Remediation snippet target: auto | aws | azure | cdk."
+    default: auto
+  fail-on:
+    description: "Fail the check on: new-critical | any-critical | never."
+    default: new-critical
+  comment:
+    description: Post or update a comment on the pull request ("true" / "false").
+    default: "true"
+  comment-id:
+    description: >
+      Distinguishes several FedRAMP-Auto comments on one PR (e.g. one per stack).
+      Defaults to the scanned path.
+    default: ""
+  upload-artifact:
+    description: Upload scan_result.json, report.md and ssp.json as a workflow artifact.
+    default: "true"
+  python-version:
+    description: Python used to run FedRAMP-Auto.
+    default: "3.12"
+  github-token:
+    description: Token used to post the PR comment (needs pull-requests write).
+    default: ${{ github.token }}
+
+outputs:
+  coverage:
+    description: KSI coverage percentage on the PR head.
+    value: ${{ steps.compare.outputs.coverage }}
+  coverage-delta:
+    description: Coverage change in percentage points vs the base branch (empty without a base).
+    value: ${{ steps.compare.outputs.coverage-delta }}
+  new-gaps:
+    description: Number of KSI gaps this change opens.
+    value: ${{ steps.compare.outputs.new-gaps }}
+  new-critical-gaps:
+    description: Number of critical KSI gaps this change opens.
+    value: ${{ steps.compare.outputs.new-critical-gaps }}
+  resolved-gaps:
+    description: Number of KSI gaps this change closes.
+    value: ${{ steps.compare.outputs.resolved-gaps }}
+  failed:
+    description: '"true" when the fail-on policy was triggered.'
+    value: ${{ steps.compare.outputs.failed }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install FedRAMP-Auto
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+      run: python -m pip install --quiet --disable-pip-version-check "$ACTION_PATH"
+
+    - name: Prepare
+      id: prep
+      shell: bash
+      env:
+        SCAN_PATH: ${{ inputs.path }}
+        COMMENT_ID: ${{ inputs.comment-id }}
+      run: |
+        id="${COMMENT_ID:-$SCAN_PATH}"
+        id="$(printf '%s' "$id" | tr -c 'A-Za-z0-9._-' '-' | sed 's/^[.-]*//; s/[.-]*$//')"
+        echo "id=${id:-default}" >> "$GITHUB_OUTPUT"
+        echo "dir=$RUNNER_TEMP/fedramp-auto/${id:-default}" >> "$GITHUB_OUTPUT"
+
+    - name: Scan pull request head
+      shell: bash
+      env:
+        SCAN_PATH: ${{ inputs.path }}
+        FORMAT: ${{ inputs.format }}
+        BASELINE: ${{ inputs.baseline }}
+        CLOUD: ${{ inputs.cloud }}
+        OUT: ${{ steps.prep.outputs.dir }}/head
+      run: |
+        # Exit code 2 only means "critical gaps found"; the policy is applied later
+        fedramp-auto scan "$SCAN_PATH" --format "$FORMAT" --baseline "$BASELINE" \
+          --cloud "$CLOUD" --no-llm --output "$OUT" || [ $? -eq 2 ]
+
+    - name: Scan base branch
+      if: github.event.pull_request.base.sha != ''
+      shell: bash
+      env:
+        BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        SCAN_PATH: ${{ inputs.path }}
+        FORMAT: ${{ inputs.format }}
+        BASELINE: ${{ inputs.baseline }}
+        CLOUD: ${{ inputs.cloud }}
+        DIR: ${{ steps.prep.outputs.dir }}
+      run: |
+        src="$DIR/base-src"
+        if ! git fetch --no-tags --depth=1 origin "$BASE_SHA" 2>/dev/null; then
+          echo "::notice::Could not fetch base commit $BASE_SHA; reporting without a comparison."
+          exit 0
+        fi
+        git worktree add --detach "$src" "$BASE_SHA" > /dev/null
+        if [ -d "$src/$SCAN_PATH" ]; then
+          fedramp-auto scan "$src/$SCAN_PATH" --format "$FORMAT" --baseline "$BASELINE" \
+            --cloud "$CLOUD" --no-llm --output "$DIR/base" > /dev/null || [ $? -eq 2 ]
+        else
+          echo "::notice::'$SCAN_PATH' does not exist on the base branch; reporting without a comparison."
+        fi
+        git worktree remove --force "$src"
+
+    - name: Compare with base
+      id: compare
+      shell: bash
+      env:
+        DIR: ${{ steps.prep.outputs.dir }}
+        FAIL_ON: ${{ inputs.fail-on }}
+        COMMENT_ID: ${{ steps.prep.outputs.id }}
+      run: |
+        set +e
+        fedramp-auto pr-comment "$DIR/head/scan_result.json" \
+          --base "$DIR/base/scan_result.json" --output "$DIR/comment.md" \
+          --fail-on "$FAIL_ON" --comment-id "$COMMENT_ID" --summary-json "$DIR/summary.json"
+        status=$?
+        set -e
+        if [ "$status" -ne 0 ] && [ "$status" -ne 2 ]; then exit "$status"; fi
+        python - "$DIR/summary.json" >> "$GITHUB_OUTPUT" <<'PY'
+        import json, sys
+        s = json.load(open(sys.argv[1], encoding="utf-8"))
+        delta = "" if s["coverage_delta"] is None else s["coverage_delta"]
+        print(f"coverage={s['coverage_pct']}")
+        print(f"coverage-delta={delta}")
+        print(f"new-gaps={s['new_gaps']}")
+        print(f"new-critical-gaps={s['new_critical_gaps']}")
+        print(f"resolved-gaps={s['resolved_gaps']}")
+        print(f"failed={str(s['failed']).lower()}")
+        PY
+        cat "$DIR/comment.md" >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Comment on pull request
+      if: inputs.comment == 'true' && github.event.pull_request.number != ''
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        DIR: ${{ steps.prep.outputs.dir }}
+      run: python -m fedramp_auto.ci.github_comment "$DIR/comment.md"
+
+    - name: Upload scan results
+      if: inputs.upload-artifact == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: fedramp-auto-${{ steps.prep.outputs.id }}
+        path: |
+          ${{ steps.prep.outputs.dir }}/head/scan_result.json
+          ${{ steps.prep.outputs.dir }}/head/report.md
+          ${{ steps.prep.outputs.dir }}/head/ssp.json
+          ${{ steps.prep.outputs.dir }}/comment.md
+        if-no-files-found: warn
+
+    - name: Apply fail-on policy
+      if: steps.compare.outputs.failed == 'true'
+      shell: bash
+      env:
+        FAIL_ON: ${{ inputs.fail-on }}
+        NEW_CRITICAL: ${{ steps.compare.outputs.new-critical-gaps }}
+      run: |
+        echo "::error title=FedRAMP-Auto::Compliance check failed (fail-on: $FAIL_ON, new critical gaps: $NEW_CRITICAL). See the PR comment or job summary."
+        exit 1
