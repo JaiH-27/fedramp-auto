@@ -18,7 +18,7 @@ from fedramp_auto.parser.cloudformation import (
     parse_directory,
     parse_file,
 )
-from fedramp_auto.parser.terraform import ParseResult
+from fedramp_auto.parser.terraform import ParsedResource, ParseResult
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "cdk"
 
@@ -205,3 +205,37 @@ def test_ssp_components_for_cdk(mapped):
     assert "AWS RDS DBInstance" in titles
     bucket = next(c for c in components if c.title == "AWS S3 Bucket")
     assert bucket.description.startswith("CloudFormation-managed")
+
+
+# ── AWS Backup plans (CloudFormation and Terraform) ───────────────────────────
+
+def test_cfn_backup_plan_controls(tmp_path):
+    rm = _map_one(tmp_path, "AWS::Backup::BackupPlan", {"BackupPlan": {
+        "BackupPlanName": "p",
+        "BackupPlanRule": [{"RuleName": "daily", "Lifecycle": {"DeleteAfterDays": 35},
+                            "TargetBackupVault": {"Fn::GetAtt": ["V", "BackupVaultName"]}}],
+    }})
+    assert {"CP-9", "SI-12"} <= set(rm.control_ids)
+
+def test_cfn_backup_plan_short_retention(tmp_path):
+    rm = _map_one(tmp_path, "AWS::Backup::BackupPlan", {"BackupPlan": {
+        "BackupPlanName": "p",
+        "BackupPlanRule": [{"RuleName": "daily", "Lifecycle": {"DeleteAfterDays": 7}}],
+    }})
+    assert rm.control_ids == ["CP-9"]
+
+def test_cfn_backup_plan_without_rules(tmp_path):
+    rm = _map_one(tmp_path, "AWS::Backup::BackupPlan", {"BackupPlan": {"BackupPlanName": "p"}})
+    assert rm.control_ids == []
+
+def test_terraform_backup_plan_controls():
+    plan = ParsedResource(
+        resource_type="aws_backup_plan",
+        resource_name="main",
+        # python-hcl2 shape: repeated blocks become lists
+        attributes={"name": "p", "rule": [{"rule_name": "daily",
+                                           "lifecycle": [{"delete_after": 35}]}]},
+        source_file="main.tf",
+    )
+    rm = ControlMapper(llm_fallback=False).map_resource(plan)
+    assert {"CP-9", "SI-12"} <= set(rm.control_ids)

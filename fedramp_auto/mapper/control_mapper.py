@@ -169,6 +169,31 @@ def _listener_encrypted(attrs: dict) -> bool:
 def _cognito_mfa_on(attrs: dict) -> bool:
     return str(attrs.get("MfaConfiguration", "")).upper() == "ON"
 
+
+# ── AWS Backup (both CloudFormation and Terraform) ────────────────────────────
+
+def _as_list(value: object) -> list:
+    if isinstance(value, list):
+        return value
+    return [value] if isinstance(value, dict) else []
+
+def _cfn_backup_rules(attrs: dict) -> list:
+    return [r for r in _as_list(_cfn(attrs, "BackupPlan", "BackupPlanRule")) if isinstance(r, dict)]
+
+def _cfn_backup_retention_days(attrs: dict) -> list[int]:
+    return [_as_int(_cfn(r, "Lifecycle", "DeleteAfterDays")) for r in _cfn_backup_rules(attrs)]
+
+def _tf_backup_rules(attrs: dict) -> list:
+    return [r for r in _as_list(attrs.get("rule")) if isinstance(r, dict)]
+
+def _tf_backup_retention_days(attrs: dict) -> list[int]:
+    return [
+        _as_int(lc.get("delete_after"))
+        for r in _tf_backup_rules(attrs)
+        for lc in _as_list(r.get("lifecycle"))
+        if isinstance(lc, dict)
+    ]
+
 # (control_id, name, check_fn, rationale_template)
 _STATIC_RULES: dict[str, list[tuple[str, str, object, str]]] = {
     "aws_s3_bucket_server_side_encryption_configuration": [
@@ -287,7 +312,24 @@ _STATIC_RULES: dict[str, list[tuple[str, str, object, str]]] = {
          "GuardDuty monitors VPC flow logs, DNS logs, and CloudTrail for threats."),
     ],
 
+    "aws_backup_plan": [
+        ("CP-9", "Information System Backup",
+         lambda a: bool(_tf_backup_rules(a)),
+         "AWS Backup plan schedules automated backups of the selected resources."),
+        ("SI-12", "Information Handling and Retention",
+         lambda a: any(d >= 35 for d in _tf_backup_retention_days(a)),
+         "Backup lifecycle retains recovery points for at least 35 days."),
+    ],
+
     # ── AWS CloudFormation / CDK (exact CFN type names) ──────────────────────
+    "AWS::Backup::BackupPlan": [
+        ("CP-9", "Information System Backup",
+         lambda a: bool(_cfn_backup_rules(a)),
+         "AWS Backup plan schedules automated backups of the selected resources."),
+        ("SI-12", "Information Handling and Retention",
+         lambda a: any(d >= 35 for d in _cfn_backup_retention_days(a)),
+         "Backup lifecycle retains recovery points for at least 35 days."),
+    ],
     "AWS::S3::Bucket": [
         ("SC-28", "Protection of Information at Rest",
          lambda a: True,
