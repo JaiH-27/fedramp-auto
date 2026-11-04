@@ -5,7 +5,7 @@ Command-line interface for FedRAMP-Auto.
 
 Commands
 --------
-  scan      Ingest a directory of Terraform / Azure ARM files and run full analysis.
+  scan      Ingest a directory of Terraform / Azure ARM / AWS CDK files and run full analysis.
   report    Print or export a gap report from a previous scan result.
   validate  Run the FedRAMP OSCAL schema validator against an SSP file.
 
@@ -84,10 +84,10 @@ def _print_gap_table(gaps: list[dict]) -> None:
 @app.command()
 def scan(
     infra_dir: Annotated[
-        Path, typer.Argument(help="Directory containing Terraform .tf files and/or ARM templates")
+        Path, typer.Argument(help="Directory containing Terraform .tf files, ARM templates, and/or CDK cdk.out")
     ],
     iac_format: Annotated[
-        str, typer.Option("--format", "-f", help="IaC format: auto | terraform | arm")
+        str, typer.Option("--format", "-f", help="IaC format: auto | terraform | arm | cdk")
     ] = "auto",
     baseline: Annotated[str, typer.Option("--baseline", "-b", help="FedRAMP baseline: low | moderate")] = "low",
     cloud: Annotated[
@@ -102,7 +102,8 @@ def scan(
     """
     Scan an infrastructure-as-code directory for FedRAMP compliance gaps.
 
-    Parses all .tf files and Azure ARM templates (*.json), maps resources to
+    Parses all .tf files, Azure ARM templates and AWS CloudFormation / CDK
+    synthesized templates (*.json), maps resources to
     NIST 800-53 controls, identifies missing Key Security Indicators, and
     generates remediation advice.
     """
@@ -112,8 +113,8 @@ def scan(
         err_console.print("[red]--baseline must be 'low' or 'moderate'[/red]")
         raise typer.Exit(1)
 
-    if iac_format not in ("auto", "terraform", "arm"):
-        err_console.print("[red]--format must be 'auto', 'terraform', or 'arm'[/red]")
+    if iac_format not in ("auto", "terraform", "arm", "cdk"):
+        err_console.print("[red]--format must be 'auto', 'terraform', 'arm', or 'cdk'[/red]")
         raise typer.Exit(1)
 
     if cloud not in ("auto", "aws", "azure"):
@@ -127,7 +128,7 @@ def scan(
     output.mkdir(parents=True, exist_ok=True)
 
     # Lazy imports so CLI loads fast even without all deps installed
-    from fedramp_auto.parser import arm, terraform
+    from fedramp_auto.parser import arm, cloudformation, terraform
     from fedramp_auto.parser.terraform import ParseResult
     from fedramp_auto.mapper.control_mapper import ControlMapper
     from fedramp_auto.gaps.detector import detect_gaps
@@ -150,7 +151,9 @@ def scan(
         # 1. Parse
         task = progress.add_task("Parsing infrastructure files...", total=None)
         parse_result = ParseResult()
-        parsers = {"terraform": [terraform], "arm": [arm]}.get(iac_format, [terraform, arm])
+        parsers = {
+            "terraform": [terraform], "arm": [arm], "cdk": [cloudformation],
+        }.get(iac_format, [terraform, arm, cloudformation])
         for parser in parsers:
             partial = parser.parse_directory(infra_dir)
             parse_result.resources.extend(partial.resources)

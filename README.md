@@ -1,6 +1,6 @@
 # FedRAMP-Auto
 
-Automated FedRAMP 20x compliance engine. Point it at your Terraform or Azure ARM templates, get back a gap report and OSCAL package — no consulting firm required.
+Automated FedRAMP 20x compliance engine. Point it at your Terraform, Azure ARM templates or AWS CDK app, get back a gap report and OSCAL package — no consulting firm required.
 
 **Runs 100% locally.** Your infrastructure code never leaves your machine.
 
@@ -9,7 +9,7 @@ Automated FedRAMP 20x compliance engine. Point it at your Terraform or Azure ARM
 ## How it works
 
 ```
-Your .tf files / ARM templates
+Your .tf files / ARM templates / cdk.out
      │
      ▼
 Local CLI agent          ← strips secrets/PII before anything else runs
@@ -124,10 +124,10 @@ official FedRAMP validation workflow.
 fedramp-auto scan INFRA_DIR [OPTIONS]
 
 Arguments:
-  INFRA_DIR   Directory of .tf files and/or ARM templates (searched recursively)
+  INFRA_DIR   Directory of .tf files, ARM templates and/or CDK cdk.out (searched recursively)
 
 Options:
-  --format    -f   auto | terraform | arm     [default: auto]
+  --format    -f   auto | terraform | arm | cdk [default: auto]
   --baseline  -b   low | moderate            [default: low]
   --cloud     -c   auto | aws | azure        [default: auto]
   --output    -o   Output directory           [default: ./output]
@@ -151,12 +151,33 @@ the static rules see real settings. `secureString` parameters are never resolved
 
 To scan Bicep, compile first: `az bicep build --file main.bicep`.
 
+### AWS CDK / CloudFormation
+
+CDK apps are scanned through what they synthesize, which is exactly what gets
+deployed. Run `cdk synth` first, then point the scanner at the project (or
+straight at `cdk.out`):
+
+```bash
+cdk synth
+poetry run fedramp-auto scan . --format cdk
+```
+
+Any `*.json` with a `Resources` map of `AWS::*` types is parsed, so hand-written
+CloudFormation JSON works too. CDK's own `manifest.json`, `tree.json`,
+`*.assets.json` and bundled asset files are skipped, as are `AWS::CDK::Metadata`
+resources. Resources are named by their CDK construct path
+(`AuditStack/AuditBucket`) rather than the hashed logical ID, and
+`{"Ref": "Param"}` is resolved from the parameter's `Default` (never for
+`NoEcho` parameters). CloudFormation YAML is not supported yet.
+
+Gaps get `aws` Terraform snippets for now; CDK-native snippets are on the roadmap.
+
 ### Remediation snippets: AWS or Azure
 
 Remediation snippets are Terraform for either the `aws` or the `azurerm`
 provider. With `--cloud auto` (the default) the target is picked from the
-scanned resources: if `azurerm_*` / `Microsoft.*` resources outnumber `aws_*`
-ones you get `azurerm` snippets, otherwise `aws`. Force a target with
+scanned resources: if `azurerm_*` / `Microsoft.*` resources outnumber `aws_*` /
+`AWS::*` ones you get `azurerm` snippets, otherwise `aws`. Force a target with
 `--cloud azure` or `--cloud aws`.
 
 Static `azurerm` snippets cover the same KSIs as the AWS library — data at rest
@@ -206,6 +227,7 @@ Add to your GitHub Actions workflow to block PRs that introduce critical complia
 |--------|---------|
 | `fedramp_auto.parser.terraform` | Parses .tf files via `python-hcl2`, strips secrets |
 | `fedramp_auto.parser.arm` | Parses Azure ARM JSON templates into the same model |
+| `fedramp_auto.parser.cloudformation` | Parses CloudFormation / CDK-synthesized templates into the same model |
 | `fedramp_auto.mapper.control_mapper` | Static rules + Mistral 7B → NIST 800-53 controls |
 | `fedramp_auto.gaps.detector` | 56/61 KSI gap analysis |
 | `fedramp_auto.advisor.remediation` | Per-gap fix guidance + Terraform snippets (`aws` / `azurerm`) |
@@ -216,7 +238,7 @@ Add to your GitHub Actions workflow to block PRs that introduce critical complia
 
 ## Privacy model
 
-- Raw `.tf` / ARM files **never leave your machine**.
+- Raw `.tf` / ARM / CloudFormation files **never leave your machine**.
 - The parser strips string values matching secret patterns before any processing.
 - Mistral 7B runs locally via Ollama — no data sent to any cloud API.
 - Only sanitized resource *type* and *attribute name* data is passed to the model.
@@ -231,7 +253,8 @@ Add to your GitHub Actions workflow to block PRs that introduce critical complia
 - [x] Phase 4: CLI (scan / report / validate)
 - [x] Azure ARM template support
 - [x] Azure (`azurerm`) remediation snippets
-- [ ] AWS CDK support
+- [x] AWS CDK support (via `cdk synth` → CloudFormation)
+- [ ] AWS CDK remediation snippets
 - [ ] GitHub App for automated PR comments
 - [ ] Web dashboard
 
