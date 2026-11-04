@@ -54,6 +54,8 @@ _SECRET_ATTR_NAMES: frozenset[str] = frozenset(
         "admin_password", "administrator_login_password", "connection_string",
         "sas_token", "primary_key", "secondary_key", "shared_key",
         "storage_account_key", "instrumentation_key",
+        # CloudFormation / CDK names (PascalCase in source, normalized to snake_case)
+        "master_user_password", "secret_string", "secret_access_key",
     }
 )
 

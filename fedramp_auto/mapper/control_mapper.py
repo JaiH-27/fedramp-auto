@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from dataclasses import dataclass, field
 
 import ollama
@@ -115,6 +116,58 @@ def _diagnostic_logs_enabled(attrs: dict) -> bool:
 
 def _defender_standard(attrs: dict) -> bool:
     return str(_prop(attrs, "pricingTier")).lower() == "standard"
+
+
+# ── AWS CloudFormation / CDK helpers ──────────────────────────────────────────
+# CloudFormation attributes are the resource's Properties (PascalCase).  Values
+# may be bools, strings ("true"), or unresolved intrinsics ({"Fn::GetAtt": ...}).
+
+_ELB_TLS12_POLICY = re.compile(r"TLS13|TLS-1-2|FS-1-2", re.IGNORECASE)
+
+def _cfn(attrs: dict, *path: str) -> object:
+    node: object = attrs
+    for key in path:
+        if not isinstance(node, dict):
+            return None
+        node = node.get(key)
+    return node
+
+def _s3_versioned(attrs: dict) -> bool:
+    return str(_cfn(attrs, "VersioningConfiguration", "Status")).lower() == "enabled"
+
+def _s3_public_blocked(attrs: dict) -> bool:
+    return _is_true(_cfn(attrs, "PublicAccessBlockConfiguration", "BlockPublicAcls")) and _is_true(
+        _cfn(attrs, "PublicAccessBlockConfiguration", "BlockPublicPolicy")
+    )
+
+def _denies_insecure_transport(attrs: dict) -> bool:
+    """Bucket policy contains a Deny on aws:SecureTransport=false (CDK enforceSSL)."""
+    statements = _cfn(attrs, "PolicyDocument", "Statement")
+    if isinstance(statements, dict):
+        statements = [statements]
+    if not isinstance(statements, list):
+        return False
+    for stmt in statements:
+        if not isinstance(stmt, dict) or stmt.get("Effect") != "Deny":
+            continue
+        secure = _cfn(stmt, "Condition", "Bool", "aws:SecureTransport")
+        if str(secure).lower() == "false":
+            return True
+    return False
+
+def _cfn_backup_retention(attrs: dict) -> int:
+    # CloudFormation defaults BackupRetentionPeriod to 1 day when omitted
+    return _as_int(attrs.get("BackupRetentionPeriod", 1))
+
+def _log_retention_ok(attrs: dict) -> bool:
+    # Omitted RetentionInDays means logs never expire
+    return "RetentionInDays" not in attrs or _as_int(attrs["RetentionInDays"]) >= 90
+
+def _listener_encrypted(attrs: dict) -> bool:
+    return str(attrs.get("Protocol", "")).upper() in ("HTTPS", "TLS")
+
+def _cognito_mfa_on(attrs: dict) -> bool:
+    return str(attrs.get("MfaConfiguration", "")).upper() == "ON"
 
 # (control_id, name, check_fn, rationale_template)
 _STATIC_RULES: dict[str, list[tuple[str, str, object, str]]] = {
@@ -232,6 +285,215 @@ _STATIC_RULES: dict[str, list[tuple[str, str, object, str]]] = {
         ("SI-4", "Information System Monitoring",
          lambda a: bool(a.get("enable", True)),
          "GuardDuty monitors VPC flow logs, DNS logs, and CloudTrail for threats."),
+    ],
+
+    # ── AWS CloudFormation / CDK (exact CFN type names) ──────────────────────
+    "AWS::S3::Bucket": [
+        ("SC-28", "Protection of Information at Rest",
+         lambda a: True,
+         "S3 encrypts every new object at rest (SSE-S3 by default, SSE-KMS if configured)."),
+        ("CP-9", "Information System Backup",
+         _s3_versioned,
+         "Versioning enabled provides object-level backup and recovery."),
+        ("AU-9", "Protection of Audit Information",
+         lambda a: _s3_versioned(a) or _is_true(a.get("ObjectLockEnabled")),
+         "Versioning / Object Lock prevents deletion or tampering of stored log objects."),
+        ("AC-3", "Access Enforcement",
+         _s3_public_blocked,
+         "Public access block prevents unauthorized public read/write."),
+        ("AC-22", "Publicly Accessible Content",
+         _s3_public_blocked,
+         "Explicit block on public ACLs and policies limits exposure."),
+        ("SC-7", "Boundary Protection",
+         _s3_public_blocked,
+         "Restricting public access enforces a security boundary on the bucket."),
+        ("AU-12", "Audit Record Generation",
+         lambda a: isinstance(a.get("LoggingConfiguration"), dict),
+         "Server access logging generates audit records for bucket requests."),
+    ],
+    "AWS::S3::BucketPolicy": [
+        ("SC-8", "Transmission Confidentiality and Integrity",
+         _denies_insecure_transport,
+         "Policy denies any request not made over TLS (aws:SecureTransport=false)."),
+    ],
+    "AWS::KMS::Key": [
+        ("SC-12", "Cryptographic Key Establishment and Management",
+         lambda a: True,
+         "KMS key provides managed cryptographic key lifecycle."),
+        ("SC-28", "Protection of Information at Rest",
+         lambda a: True,
+         "KMS-managed encryption key protects data at rest."),
+        ("SC-12(1)", "Cryptographic Key Establishment — Availability",
+         lambda a: _is_true(a.get("EnableKeyRotation")),
+         "Automatic key rotation reduces risk of key compromise over time."),
+    ],
+    "AWS::RDS::DBInstance": [
+        ("SC-28", "Protection of Information at Rest",
+         lambda a: _is_true(a.get("StorageEncrypted")),
+         "StorageEncrypted=true encrypts the RDS volume at rest."),
+        ("CP-9", "Information System Backup",
+         lambda a: _cfn_backup_retention(a) > 0,
+         "Automated backups with non-zero retention period satisfy backup requirements."),
+        ("SI-12", "Information Handling and Retention",
+         lambda a: _cfn_backup_retention(a) >= 35,
+         "35-day retention satisfies FedRAMP audit log retention guidance."),
+        ("SC-6", "Resource Availability",
+         lambda a: _is_true(a.get("MultiAZ")),
+         "Multi-AZ deployment provides high availability and failover."),
+        ("SC-5", "Denial of Service Protection",
+         lambda a: _is_true(a.get("MultiAZ")),
+         "Multi-AZ protects database availability against zone failures."),
+    ],
+    "AWS::RDS::DBCluster": [
+        ("SC-28", "Protection of Information at Rest",
+         lambda a: _is_true(a.get("StorageEncrypted")),
+         "StorageEncrypted=true encrypts the Aurora cluster volume at rest."),
+        ("CP-9", "Information System Backup",
+         lambda a: _cfn_backup_retention(a) > 0,
+         "Continuous automated backups with a retention window."),
+        ("SI-12", "Information Handling and Retention",
+         lambda a: _cfn_backup_retention(a) >= 35,
+         "35-day retention satisfies FedRAMP audit log retention guidance."),
+    ],
+    "AWS::DynamoDB::Table": [
+        ("SC-28", "Protection of Information at Rest",
+         lambda a: True,
+         "DynamoDB encrypts all table data at rest (AWS-owned or KMS key)."),
+        ("CP-9", "Information System Backup",
+         lambda a: _is_true(_cfn(a, "PointInTimeRecoverySpecification",
+                                 "PointInTimeRecoveryEnabled")),
+         "Point-in-time recovery provides continuous backups for 35 days."),
+    ],
+    "AWS::EC2::Volume": [
+        ("SC-28", "Protection of Information at Rest",
+         lambda a: _is_true(a.get("Encrypted")),
+         "Encrypted=true encrypts the EBS volume at rest."),
+    ],
+    "AWS::CloudTrail::Trail": [
+        ("AU-2", "Audit Events",
+         lambda a: _is_true(a.get("IsLogging")),
+         "CloudTrail records API-level audit events across the account."),
+        ("AU-3", "Content of Audit Records",
+         lambda a: _is_true(a.get("IsLogging")),
+         "CloudTrail captures who, what, when, where for every API call."),
+        ("AU-12", "Audit Record Generation",
+         lambda a: _is_true(a.get("IsLogging")),
+         "CloudTrail generates audit records for all supported AWS services."),
+        ("AU-9", "Protection of Audit Information",
+         lambda a: _is_true(a.get("EnableLogFileValidation")),
+         "Log file validation detects tampering with delivered log files."),
+        ("AU-6", "Audit Record Review, Analysis, and Reporting",
+         lambda a: _is_true(a.get("IncludeGlobalServiceEvents")),
+         "Global service events provides complete audit coverage."),
+        ("AU-12(1)", "Audit Record Generation — System-wide",
+         lambda a: _is_true(a.get("IsMultiRegionTrail")),
+         "Multi-region trail ensures audit coverage in all active regions."),
+    ],
+    "AWS::Logs::LogGroup": [
+        ("AU-4", "Audit Log Storage Capacity",
+         lambda a: True,
+         "CloudWatch log group provides managed audit log storage."),
+        ("AU-11", "Audit Record Retention",
+         _log_retention_ok,
+         "Retention >= 90 days (or never-expire) satisfies FedRAMP audit retention."),
+    ],
+    "AWS::EC2::FlowLog": [
+        ("AU-12", "Audit Record Generation",
+         lambda a: True,
+         "VPC flow logs record network traffic metadata for the boundary."),
+        ("SI-4", "Information System Monitoring",
+         lambda a: True,
+         "Flow logs support monitoring for anomalous network activity."),
+    ],
+    "AWS::IAM::Role": [
+        ("AC-2", "Account Management",
+         lambda a: True,
+         "IAM role defines a managed identity subject to account management controls."),
+        ("AC-3", "Access Enforcement",
+         lambda a: True,
+         "IAM role policy enforces least-privilege access to AWS resources."),
+        ("AC-6", "Least Privilege",
+         lambda a: True,
+         "Role-based access limits permissions to those required for function."),
+    ],
+    "AWS::EC2::SecurityGroup": [
+        ("SC-7", "Boundary Protection",
+         lambda a: True,
+         "Security group rules enforce network boundary controls."),
+        ("AC-4", "Information Flow Enforcement",
+         lambda a: True,
+         "Inbound/outbound rules control information flow between network segments."),
+    ],
+    "AWS::EC2::VPC": [
+        ("SC-7", "Boundary Protection",
+         lambda a: True,
+         "VPC isolates network boundary for the system boundary."),
+        ("AC-4", "Information Flow Enforcement",
+         lambda a: True,
+         "VPC subnets and route tables enforce information flow policies."),
+    ],
+    "AWS::ElasticLoadBalancingV2::Listener": [
+        ("SC-8", "Transmission Confidentiality and Integrity",
+         _listener_encrypted,
+         "HTTPS/TLS listener encrypts client traffic in transit."),
+        ("SC-8(1)", "Transmission Confidentiality — Cryptographic Protection",
+         lambda a: _listener_encrypted(a)
+         and bool(_ELB_TLS12_POLICY.search(str(a.get("SslPolicy", "")))),
+         "SSL policy restricts clients to TLS 1.2 or higher."),
+    ],
+    "AWS::WAFv2::WebACL": [
+        ("SC-7", "Boundary Protection",
+         lambda a: True,
+         "WAF acts as a boundary protection mechanism filtering web traffic."),
+        ("SI-3", "Malicious Code Protection",
+         lambda a: True,
+         "WAF rules block known malicious request patterns and injection attempts."),
+    ],
+    "AWS::GuardDuty::Detector": [
+        ("SI-3", "Malicious Code Protection",
+         lambda a: _is_true(a.get("Enable")),
+         "GuardDuty provides continuous threat detection for malicious activity."),
+        ("SI-4", "Information System Monitoring",
+         lambda a: _is_true(a.get("Enable")),
+         "GuardDuty monitors VPC flow logs, DNS logs, and CloudTrail for threats."),
+    ],
+    "AWS::SecurityHub::Hub": [
+        ("SI-4", "Information System Monitoring",
+         lambda a: True,
+         "Security Hub aggregates findings and runs continuous compliance checks."),
+    ],
+    "AWS::Config::ConfigurationRecorder": [
+        ("CM-8", "Information System Component Inventory",
+         lambda a: a.get("RecordingGroup") is None
+         or _is_true(_cfn(a, "RecordingGroup", "AllSupported")),
+         "AWS Config records all supported resource types, maintaining inventory."),
+        ("CM-6", "Configuration Settings",
+         lambda a: True,
+         "Config recorder detects configuration drift from baseline settings."),
+    ],
+    "AWS::ECR::Repository": [
+        ("RA-5", "Vulnerability Monitoring and Scanning",
+         lambda a: _is_true(_cfn(a, "ImageScanningConfiguration", "ScanOnPush")),
+         "Scan-on-push checks every container image for known CVEs."),
+    ],
+    "AWS::SecretsManager::RotationSchedule": [
+        ("IA-5", "Authenticator Management",
+         lambda a: True,
+         "Secrets Manager rotates the credential automatically on a schedule."),
+    ],
+    "AWS::Cognito::UserPool": [
+        ("AC-2", "Account Management",
+         lambda a: True,
+         "Cognito user pool centrally manages user accounts."),
+        ("IA-2", "Identification and Authentication (Organizational Users)",
+         _cognito_mfa_on,
+         "MfaConfiguration=ON requires a second factor at every sign-in."),
+        ("IA-2(1)", "Multi-factor Authentication to Privileged Accounts",
+         _cognito_mfa_on,
+         "MFA is mandatory for all users, including privileged ones."),
+        ("IA-5", "Authenticator Management",
+         lambda a: _as_int(_cfn(a, "Policies", "PasswordPolicy", "MinimumLength")) >= 12,
+         "Password policy enforces a minimum length of 12 characters."),
     ],
 
     # ── Azure (ARM types, lowercased — ARM type names are case-insensitive) ──
@@ -472,7 +734,7 @@ Response:
 
 def _build_llm_prompt(resource: ParsedResource) -> str:
     attrs_json = json.dumps(resource.attributes, indent=2, default=str)
-    return f"""You are a FedRAMP compliance expert. Given an infrastructure-as-code resource (Terraform or Azure ARM), identify which NIST 800-53 Rev5 controls it satisfies based on its type and configuration attributes.
+    return f"""You are a FedRAMP compliance expert. Given an infrastructure-as-code resource (Terraform, Azure ARM, or AWS CloudFormation/CDK), identify which NIST 800-53 Rev5 controls it satisfies based on its type and configuration attributes.
 
 {_FEW_SHOT_EXAMPLES}
 

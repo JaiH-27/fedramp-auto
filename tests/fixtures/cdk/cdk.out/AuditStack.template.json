@@ -1,0 +1,113 @@
+{
+ "Parameters": {
+  "LogRetentionDays": {"Type": "Number", "Default": 365},
+  "DbMasterPassword": {"Type": "String", "NoEcho": true, "Default": "NotARealPassword123"},
+  "BootstrapVersion": {
+   "Type": "AWS::SSM::Parameter::Value<String>",
+   "Default": "/cdk-bootstrap/hnb659fds/version"
+  }
+ },
+ "Resources": {
+  "AuditKey5A1B2C3D": {
+   "Type": "AWS::KMS::Key",
+   "Properties": {
+    "EnableKeyRotation": true,
+    "KeyPolicy": {"Statement": [{"Action": "kms:*", "Effect": "Allow", "Principal": {"AWS": {"Fn::Join": ["", ["arn:", {"Ref": "AWS::Partition"}, ":iam::", {"Ref": "AWS::AccountId"}, ":root"]]}}, "Resource": "*"}], "Version": "2012-10-17"}
+   },
+   "UpdateReplacePolicy": "Retain",
+   "DeletionPolicy": "Retain",
+   "Metadata": {"aws:cdk:path": "AuditStack/AuditKey/Resource"}
+  },
+  "AuditBucket8E3F1A2B": {
+   "Type": "AWS::S3::Bucket",
+   "Properties": {
+    "BucketEncryption": {"ServerSideEncryptionConfiguration": [{"ServerSideEncryptionByDefault": {"KMSMasterKeyID": {"Fn::GetAtt": ["AuditKey5A1B2C3D", "Arn"]}, "SSEAlgorithm": "aws:kms"}}]},
+    "PublicAccessBlockConfiguration": {"BlockPublicAcls": true, "BlockPublicPolicy": true, "IgnorePublicAcls": true, "RestrictPublicBuckets": true},
+    "VersioningConfiguration": {"Status": "Enabled"},
+    "ObjectLockEnabled": true
+   },
+   "UpdateReplacePolicy": "Retain",
+   "DeletionPolicy": "Retain",
+   "Metadata": {"aws:cdk:path": "AuditStack/AuditBucket/Resource"}
+  },
+  "AuditBucketPolicy7C1D2E3F": {
+   "Type": "AWS::S3::BucketPolicy",
+   "Properties": {
+    "Bucket": {"Ref": "AuditBucket8E3F1A2B"},
+    "PolicyDocument": {"Statement": [{"Action": "s3:*", "Condition": {"Bool": {"aws:SecureTransport": "false"}}, "Effect": "Deny", "Principal": {"AWS": "*"}, "Resource": [{"Fn::GetAtt": ["AuditBucket8E3F1A2B", "Arn"]}]}], "Version": "2012-10-17"}
+   },
+   "Metadata": {"aws:cdk:path": "AuditStack/AuditBucket/Policy/Resource"}
+  },
+  "TrailLogs4F5E6D7C": {
+   "Type": "AWS::Logs::LogGroup",
+   "Properties": {"RetentionInDays": {"Ref": "LogRetentionDays"}},
+   "UpdateReplacePolicy": "Retain",
+   "DeletionPolicy": "Retain",
+   "Metadata": {"aws:cdk:path": "AuditStack/TrailLogs/Resource"}
+  },
+  "Trail022F0CF2": {
+   "Type": "AWS::CloudTrail::Trail",
+   "Properties": {
+    "IsLogging": true,
+    "S3BucketName": {"Ref": "AuditBucket8E3F1A2B"},
+    "EnableLogFileValidation": true,
+    "IncludeGlobalServiceEvents": true,
+    "IsMultiRegionTrail": true,
+    "KMSKeyId": {"Fn::GetAtt": ["AuditKey5A1B2C3D", "Arn"]}
+   },
+   "Metadata": {"aws:cdk:path": "AuditStack/Trail/Resource"}
+  },
+  "Vpc8378EB38": {
+   "Type": "AWS::EC2::VPC",
+   "Properties": {"CidrBlock": "10.0.0.0/16", "EnableDnsHostnames": true, "EnableDnsSupport": true},
+   "Metadata": {"aws:cdk:path": "AuditStack/Vpc/Resource"}
+  },
+  "VpcFlowLogA1B2C3D4": {
+   "Type": "AWS::EC2::FlowLog",
+   "Properties": {"ResourceId": {"Ref": "Vpc8378EB38"}, "ResourceType": "VPC", "TrafficType": "ALL"},
+   "Metadata": {"aws:cdk:path": "AuditStack/Vpc/FlowLog/FlowLog"}
+  },
+  "DbSecurityGroupE1F2A3B4": {
+   "Type": "AWS::EC2::SecurityGroup",
+   "Properties": {"GroupDescription": "Database access", "VpcId": {"Ref": "Vpc8378EB38"}},
+   "Metadata": {"aws:cdk:path": "AuditStack/DbSecurityGroup/Resource"}
+  },
+  "Database5C6D7E8F": {
+   "Type": "AWS::RDS::DBInstance",
+   "Properties": {
+    "DBInstanceClass": "db.t3.medium",
+    "Engine": "postgres",
+    "MasterUsername": "fedadmin",
+    "MasterUserPassword": {"Ref": "DbMasterPassword"},
+    "StorageEncrypted": true,
+    "KmsKeyId": {"Fn::GetAtt": ["AuditKey5A1B2C3D", "Arn"]},
+    "BackupRetentionPeriod": 35,
+    "MultiAZ": true
+   },
+   "Metadata": {"aws:cdk:path": "AuditStack/Database/Resource"}
+  },
+  "UserPool6BA7E5F2": {
+   "Type": "AWS::Cognito::UserPool",
+   "Properties": {
+    "MfaConfiguration": "ON",
+    "EnabledMfas": ["SOFTWARE_TOKEN_MFA"],
+    "Policies": {"PasswordPolicy": {"MinimumLength": 14, "RequireSymbols": true}}
+   },
+   "Metadata": {"aws:cdk:path": "AuditStack/UserPool/Resource"}
+  },
+  "Detector": {
+   "Type": "AWS::GuardDuty::Detector",
+   "Properties": {"Enable": true}
+  },
+  "CDKMetadata": {
+   "Type": "AWS::CDK::Metadata",
+   "Properties": {"Analytics": "v2:deflate64:H4sIAAAAAAAA/zPSMzQz0TNUTCwv1k1OydbNySzSqw4uSUzO1kssL04tKkpNLzYyMNIzMtczUExKLCrLTKxUKMnMzwMATSiB3jMAAAA="},
+   "Metadata": {"aws:cdk:path": "AuditStack/CDKMetadata/Default"}
+  }
+ },
+ "Rules": {
+  "CheckBootstrapVersion": {
+   "Assertions": [{"Assert": {"Fn::Not": [{"Fn::Contains": [["1", "2", "3", "4", "5"], {"Ref": "BootstrapVersion"}]}]}, "AssertDescription": "CDK bootstrap stack version 6 required."}]
+  }
+ }
+}

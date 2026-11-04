@@ -101,10 +101,23 @@ def _provider_for(resource_type: str) -> str:
 
 
 def _component_title(resource_type: str) -> str:
-    """aws_s3_bucket → "AWS S3 Bucket"; Microsoft.Storage/storageAccounts → "Azure Storage/storageAccounts"."""
+    """
+    aws_s3_bucket → "AWS S3 Bucket"; AWS::S3::Bucket → "AWS S3 Bucket";
+    Microsoft.Storage/storageAccounts → "Azure Storage/storageAccounts".
+    """
     if _provider_for(resource_type) == "azure":
         return "Azure " + resource_type.split(".", 1)[1]
+    if resource_type.startswith("AWS::"):
+        return "AWS " + resource_type[len("AWS::"):].replace("::", " ")
     return resource_type.replace("aws_", "AWS ").replace("_", " ").title()
+
+
+def _iac_source(resource_type: str) -> str:
+    if _provider_for(resource_type) == "azure":
+        return "ARM-template"
+    if "::" in resource_type:
+        return "CloudFormation"
+    return "Terraform"
 
 
 # ── SSP builder ───────────────────────────────────────────────────────────────
@@ -280,7 +293,7 @@ def build_ssp(
         comp_uuid = _uuid()
         resource_type_uuids[rt] = comp_uuid
         title = _component_title(rt)
-        source = "ARM-template" if _provider_for(rt) == "azure" else "Terraform"
+        source = _iac_source(rt)
         components.append(
             common.SystemComponent(
                 uuid=comp_uuid,

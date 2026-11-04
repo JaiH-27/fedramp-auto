@@ -754,13 +754,14 @@ def detect_cloud(resources: Iterable[ParsedResource]) -> Cloud:
     Pick the cloud whose remediation snippets best fit *resources*.
 
     Azure resources are ``azurerm_*`` Terraform types or ``Microsoft.*`` ARM
-    types; AWS resources are ``aws_*`` types.  Whichever cloud has more
-    resources wins; ties (including no resources) default to ``"aws"``.
+    types; AWS resources are ``aws_*`` Terraform types or ``AWS::*``
+    CloudFormation/CDK types.  Whichever cloud has more resources wins; ties
+    (including no resources) default to ``"aws"``.
     """
     aws = azure = 0
     for r in resources:
         rtype = r.resource_type
-        if rtype.startswith("aws_"):
+        if rtype.startswith(("aws_", "AWS::")):
             aws += 1
         elif rtype.startswith("azurerm_") or rtype.lower().startswith("microsoft."):
             azure += 1
