@@ -22,7 +22,6 @@ from typing import Any
 
 from trestle.oscal import ssp as ssp_model
 
-
 # ── Result types ──────────────────────────────────────────────────────────────
 
 @dataclass
@@ -340,7 +339,8 @@ def validate_ssp_file(path: str | Path) -> ValidationReport:
 
 def validate_ssp_dict(ssp_dict: dict) -> ValidationReport:
     """Validate an already-parsed SSP dict (without a file)."""
-    import tempfile, json
+    import json
+    import tempfile
     with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
         json.dump({"system-security-plan": ssp_dict}, f)
         tmp = f.name

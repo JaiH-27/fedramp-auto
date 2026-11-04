@@ -23,14 +23,14 @@ import json
 import logging
 import sys
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, TextIO
 
 import typer
+from rich import box
 from rich.console import Console
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
-from rich import box
 
 app = typer.Typer(
     name="fedramp-auto",
@@ -38,6 +38,37 @@ app = typer.Typer(
     add_completion=False,
     rich_markup_mode="rich",
 )
+
+
+
+# ── Console encoding ──────────────────────────────────────────────────────────
+# Windows consoles and redirected output often use a legacy code page (cp1252)
+# that cannot encode the spinner glyphs, ✓, box-drawing or em dashes rich
+# prints.  Without this, any such character raises UnicodeEncodeError and the
+# scan dies mid-run.
+
+def _is_utf8(stream: TextIO) -> bool:
+    encoding = (getattr(stream, "encoding", None) or "").lower().replace("-", "")
+    return encoding in ("utf8", "utf8sig")
+
+
+def _harden_stream(stream: TextIO) -> None:
+    """Replace unencodable characters with '?' instead of crashing."""
+    if _is_utf8(stream) or not hasattr(stream, "reconfigure"):
+        return
+    try:
+        stream.reconfigure(errors="replace")
+    except (ValueError, OSError):  # detached or closed stream
+        pass
+
+
+def _spinner_name(stream: TextIO) -> str:
+    """The braille "dots" spinner needs Unicode; fall back to rich's ASCII "line" spinner."""
+    return "dots" if _is_utf8(stream) else "line"
+
+
+_harden_stream(sys.stdout)
+_harden_stream(sys.stderr)
 
 console = Console()
 err_console = Console(stderr=True)
@@ -84,19 +115,30 @@ def _print_gap_table(gaps: list[dict]) -> None:
 @app.command()
 def scan(
     infra_dir: Annotated[
-        Path, typer.Argument(help="Directory containing Terraform .tf files, ARM templates, and/or CDK cdk.out")
+        Path,
+        typer.Argument(
+            help="Directory containing Terraform .tf files, ARM templates, and/or CDK cdk.out"
+        ),
     ],
     iac_format: Annotated[
         str, typer.Option("--format", "-f", help="IaC format: auto | terraform | arm | cdk")
     ] = "auto",
-    baseline: Annotated[str, typer.Option("--baseline", "-b", help="FedRAMP baseline: low | moderate")] = "low",
+    baseline: Annotated[
+        str, typer.Option("--baseline", "-b", help="FedRAMP baseline: low | moderate")
+    ] = "low",
     cloud: Annotated[
         str, typer.Option("--cloud", "-c", help="Remediation snippet target: auto | aws | azure")
     ] = "auto",
-    output: Annotated[Path, typer.Option("--output", "-o", help="Directory to write scan results")] = Path("./output"),
+    output: Annotated[
+        Path, typer.Option("--output", "-o", help="Directory to write scan results")
+    ] = Path("./output"),
     model: Annotated[str, typer.Option("--model", "-m", help="Ollama model name")] = "mistral",
-    ollama_url: Annotated[str, typer.Option("--ollama-url", help="Ollama API base URL")] = "http://localhost:11434",
-    no_llm: Annotated[bool, typer.Option("--no-llm", help="Disable LLM fallback (static rules only)")] = False,
+    ollama_url: Annotated[
+        str, typer.Option("--ollama-url", help="Ollama API base URL")
+    ] = "http://localhost:11434",
+    no_llm: Annotated[
+        bool, typer.Option("--no-llm", help="Disable LLM fallback (static rules only)")
+    ] = False,
     verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False,
 ) -> None:
     """
@@ -128,12 +170,12 @@ def scan(
     output.mkdir(parents=True, exist_ok=True)
 
     # Lazy imports so CLI loads fast even without all deps installed
+    from fedramp_auto.advisor.remediation import RemediationAdvisor, detect_cloud
+    from fedramp_auto.gaps.detector import detect_gaps
+    from fedramp_auto.mapper.control_mapper import ControlMapper
+    from fedramp_auto.oscal.ssp_generator import generate_ssp
     from fedramp_auto.parser import arm, cloudformation, terraform
     from fedramp_auto.parser.terraform import ParseResult
-    from fedramp_auto.mapper.control_mapper import ControlMapper
-    from fedramp_auto.gaps.detector import detect_gaps
-    from fedramp_auto.advisor.remediation import RemediationAdvisor, detect_cloud
-    from fedramp_auto.oscal.ssp_generator import generate_ssp
 
     console.print(Panel(
         f"[bold]FedRAMP-Auto[/bold] · scan\n"
@@ -146,7 +188,8 @@ def scan(
         border_style="blue",
     ))
 
-    with Progress(SpinnerColumn(), TextColumn("{task.description}"), console=console) as progress:
+    spinner = SpinnerColumn(_spinner_name(console.file))
+    with Progress(spinner, TextColumn("{task.description}"), console=console) as progress:
 
         # 1. Parse
         task = progress.add_task("Parsing infrastructure files...", total=None)
@@ -158,7 +201,9 @@ def scan(
             partial = parser.parse_directory(infra_dir)
             parse_result.resources.extend(partial.resources)
             parse_result.errors.extend(partial.errors)
-        progress.update(task, description=f"[green]Parsed {len(parse_result.resources)} resource(s)[/green]")
+        progress.update(
+            task, description=f"[green]Parsed {len(parse_result.resources)} resource(s)[/green]"
+        )
 
         if parse_result.errors:
             for e in parse_result.errors:
@@ -174,7 +219,9 @@ def scan(
             all_controls.extend(rm.control_ids)
 
         unique_controls = sorted(set(all_controls))
-        progress.update(task, description=f"[green]Mapped {len(unique_controls)} unique control(s)[/green]")
+        progress.update(
+            task, description=f"[green]Mapped {len(unique_controls)} unique control(s)[/green]"
+        )
 
         # 3. Detect gaps
         progress.update(task, description="Detecting KSI gaps...")
@@ -261,10 +308,11 @@ def scan(
 
     # ── Save markdown report ───────────────────────────────────────────────────
     md_lines = [
-        f"# FedRAMP-Auto scan report\n",
+        "# FedRAMP-Auto scan report\n",
         f"**Baseline:** {baseline.upper()}  ",
         f"**Remediation target:** {_CLOUD_LABELS[snippet_cloud]}  ",
-        f"**KSI coverage:** {gap_report.coverage_pct}% ({len(gap_report.satisfied_ksis)}/{gap_report.total_ksis})  ",
+        f"**KSI coverage:** {gap_report.coverage_pct}% "
+        f"({len(gap_report.satisfied_ksis)}/{gap_report.total_ksis})  ",
         f"**Critical gaps:** {len(gap_report.critical_gaps)}  ",
         f"**Total gaps:** {len(gap_report.gaps)}\n",
         "## Gaps\n",
@@ -286,7 +334,7 @@ def scan(
     md_path = output / "report.md"
     md_path.write_text("\n".join(md_lines), encoding="utf-8")
 
-    console.print(f"[green]Results saved:[/green]")
+    console.print("[green]Results saved:[/green]")
     console.print(f"  {result_path}")
     console.print(f"  {md_path}")
     console.print(f"  {ssp_path}")
@@ -302,7 +350,9 @@ def scan(
 @app.command()
 def report(
     result_file: Annotated[Path, typer.Argument(help="scan_result.json from a previous scan")],
-    show_remediations: Annotated[bool, typer.Option("--remediations", "-r", help="Print remediation snippets")] = False,
+    show_remediations: Annotated[
+        bool, typer.Option("--remediations", "-r", help="Print remediation snippets")
+    ] = False,
 ) -> None:
     """Print a formatted summary of a saved scan result."""
 
@@ -363,7 +413,9 @@ def validate(
             issue.severity, "white"
         )
         location = f" [dim]({issue.path})[/dim]" if issue.path else ""
-        console.print(f"[{colour}]{issue.severity.upper()} {issue.code}[/] {issue.message}{location}")
+        console.print(
+            f"[{colour}]{issue.severity.upper()} {issue.code}[/] {issue.message}{location}"
+        )
 
     if report.passed:
         console.print(f"[green]✓ {report.summary()}[/green]")

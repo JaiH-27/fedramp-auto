@@ -2,21 +2,15 @@
 
 import json
 import sys
-import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from fedramp_auto.gaps.detector import detect_gaps
-from fedramp_auto.mapper.control_mapper import (
-    ControlMapper, ControlMapping, ResourceMapping
-)
-from fedramp_auto.oscal.ssp_generator import (
-    SystemInfo, build_ssp, generate_ssp, write_ssp
-)
-from fedramp_auto.oscal.validator import validate_ssp_file, ValidationReport
+from fedramp_auto.mapper.control_mapper import ControlMapper, ControlMapping, ResourceMapping
+from fedramp_auto.oscal.ssp_generator import SystemInfo, build_ssp, generate_ssp, write_ssp
+from fedramp_auto.oscal.validator import ValidationReport, validate_ssp_file
 from fedramp_auto.parser.terraform import ParsedResource
-
 
 # ── Test fixtures ─────────────────────────────────────────────────────────────
 
