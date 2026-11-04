@@ -21,7 +21,7 @@ Mistral 7B (Ollama)      ← maps resources to NIST 800-53 controls
 KSI gap detector         ← compares against 56 (Low) / 61 (Moderate) FedRAMP KSIs
      │
      ▼
-Remediation advisor      ← plain-English fixes + Terraform snippets per gap (aws / azurerm)
+Remediation advisor      ← plain-English fixes + snippets per gap (Terraform aws / azurerm, or CDK)
      │
      ▼
 OSCAL SSP (JSON)         ← OSCAL 1.1.2 draft for review and completion
@@ -95,7 +95,7 @@ Output:
 # Terminal summary
 poetry run fedramp-auto report ./output/scan_result.json
 
-# With remediation Terraform snippets
+# With remediation snippets (Terraform or CDK)
 poetry run fedramp-auto report ./output/scan_result.json --remediations
 
 # Full markdown report
@@ -129,7 +129,7 @@ Arguments:
 Options:
   --format    -f   auto | terraform | arm | cdk [default: auto]
   --baseline  -b   low | moderate            [default: low]
-  --cloud     -c   auto | aws | azure        [default: auto]
+  --cloud     -c   auto | aws | azure | cdk  [default: auto]
   --output    -o   Output directory           [default: ./output]
   --model     -m   Ollama model name          [default: mistral]
   --ollama-url     Ollama API URL             [default: http://localhost:11434]
@@ -170,15 +170,21 @@ resources. Resources are named by their CDK construct path
 `{"Ref": "Param"}` is resolved from the parameter's `Default` (never for
 `NoEcho` parameters). CloudFormation YAML is not supported yet.
 
-Gaps get `aws` Terraform snippets for now; CDK-native snippets are on the roadmap.
+Gaps get AWS CDK (TypeScript) remediation snippets automatically — see below.
 
-### Remediation snippets: AWS or Azure
+### Remediation snippets: Terraform (AWS / Azure) or AWS CDK
 
-Remediation snippets are Terraform for either the `aws` or the `azurerm`
-provider. With `--cloud auto` (the default) the target is picked from the
-scanned resources: if `azurerm_*` / `Microsoft.*` resources outnumber `aws_*` /
-`AWS::*` ones you get `azurerm` snippets, otherwise `aws`. Force a target with
-`--cloud azure` or `--cloud aws`.
+| `--cloud` | Snippets |
+|-----------|----------|
+| `aws`     | Terraform, `aws` provider |
+| `azure`   | Terraform, `azurerm` provider |
+| `cdk`     | AWS CDK v2, TypeScript (`aws-cdk-lib`) |
+
+With `--cloud auto` (the default) the target is picked from the scanned
+resources: Azure if `azurerm_*` / `Microsoft.*` resources outnumber all AWS
+ones; otherwise `cdk` if CloudFormation `AWS::*` types outnumber Terraform
+`aws_*` types, else `aws`. Force a target with `--cloud`; for example,
+`--cloud aws` gives Terraform fixes for hand-written CloudFormation.
 
 Static `azurerm` snippets cover the same KSIs as the AWS library — data at rest
 (Key Vault CMK, storage infrastructure encryption, SQL TDE, disk encryption sets),
@@ -187,13 +193,30 @@ for Cloud scanning, Sentinel monitoring and Recovery Services backups. Other gap
 fall back to the LLM, which is prompted for the selected provider. The chosen
 cloud is recorded in `scan_result.json` (`cloud`, and per remediation).
 
+Static CDK snippets cover the same seven KSIs: a rotating CMK with SSE-KMS
+buckets and encrypted RDS, HTTPS listeners with the TLS 1.3/1.2 policy, a
+multi-region CloudTrail, a tiered VPC with flow logs, Inspector v2 + Security
+Hub (NIST 800-53 Rev. 5) + ECR scan-on-push, GuardDuty alerting, and AWS
+Backup. Each snippet is imports plus code for a Stack constructor. Each
+remediation in `scan_result.json` has a `snippet_language` (`hcl` or
+`typescript`); the snippet itself stays under the `terraform_snippet` key for
+compatibility.
+
+Every CDK snippet is type-checked (`tsc --strict`), synthesized, and re-scanned
+to confirm it closes its KSI:
+
+```bash
+poetry run python scripts/check_cdk_snippets.py      # needs Node.js 18+
+FEDRAMP_CHECK_CDK=1 poetry run pytest tests/test_check_cdk_snippets.py
+```
+
 ### `fedramp-auto report`
 
 ```
 fedramp-auto report RESULT_FILE [OPTIONS]
 
 Options:
-  --remediations  -r   Print Terraform remediation snippets
+  --remediations  -r   Print remediation snippets (Terraform or CDK)
 ```
 
 ### `fedramp-auto validate`
@@ -230,7 +253,7 @@ Add to your GitHub Actions workflow to block PRs that introduce critical complia
 | `fedramp_auto.parser.cloudformation` | Parses CloudFormation / CDK-synthesized templates into the same model |
 | `fedramp_auto.mapper.control_mapper` | Static rules + Mistral 7B → NIST 800-53 controls |
 | `fedramp_auto.gaps.detector` | 56/61 KSI gap analysis |
-| `fedramp_auto.advisor.remediation` | Per-gap fix guidance + Terraform snippets (`aws` / `azurerm`) |
+| `fedramp_auto.advisor.remediation` | Per-gap fix guidance + snippets (Terraform `aws` / `azurerm`, AWS CDK) |
 | `fedramp_auto.oscal` | OSCAL SSP generation via `compliance-trestle` |
 | `fedramp_auto.cli.main` | Typer CLI (scan / report / validate) |
 
@@ -254,7 +277,7 @@ Add to your GitHub Actions workflow to block PRs that introduce critical complia
 - [x] Azure ARM template support
 - [x] Azure (`azurerm`) remediation snippets
 - [x] AWS CDK support (via `cdk synth` → CloudFormation)
-- [ ] AWS CDK remediation snippets
+- [x] AWS CDK remediation snippets
 - [ ] GitHub App for automated PR comments
 - [ ] Web dashboard
 
