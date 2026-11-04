@@ -182,8 +182,29 @@ def test_ecr_scan_on_push(tmp_path):
 
 # ── End to end: cloud detection, gaps, SSP ────────────────────────────────────
 
-def test_detect_cloud_is_aws(parsed):
-    assert detect_cloud(parsed.resources) == "aws"
+def test_detect_cloud_picks_cdk_snippets(parsed):
+    assert detect_cloud(parsed.resources) == "cdk"
+
+
+def _res(rtype: str) -> ParsedResource:
+    return ParsedResource(resource_type=rtype, resource_name="x", attributes={}, source_file="t")
+
+
+@pytest.mark.parametrize(
+    ("types", "expected"),
+    [
+        (["AWS::S3::Bucket"], "cdk"),
+        (["AWS::S3::Bucket", "AWS::KMS::Key", "aws_s3_bucket"], "cdk"),
+        (["AWS::S3::Bucket", "aws_s3_bucket"], "aws"),                    # tie -> aws
+        (["AWS::S3::Bucket", "aws_s3_bucket", "aws_kms_key"], "aws"),
+        # CloudFormation still counts as AWS when weighed against Azure
+        (["AWS::S3::Bucket", "AWS::KMS::Key", "Microsoft.Sql/servers"], "cdk"),
+        (["AWS::S3::Bucket", "aws_kms_key", "azurerm_vnet", "Microsoft.Sql/servers"], "aws"),
+        (["AWS::S3::Bucket", "azurerm_vnet", "Microsoft.Sql/servers"], "azure"),
+    ],
+)
+def test_detect_cloud_with_cloudformation(types, expected):
+    assert detect_cloud(_res(t) for t in types) == expected
 
 def test_gap_report_from_cdk(mapped):
     controls = sorted({c for rm in mapped for c in rm.control_ids})

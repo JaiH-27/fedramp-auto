@@ -1037,21 +1037,27 @@ def _call_llm_for_remediation(
 
 def detect_cloud(resources: Iterable[ParsedResource]) -> Cloud:
     """
-    Pick the cloud whose remediation snippets best fit *resources*.
+    Pick the snippet target that best fits *resources*.
 
     Azure resources are ``azurerm_*`` Terraform types or ``Microsoft.*`` ARM
     types; AWS resources are ``aws_*`` Terraform types or ``AWS::*``
-    CloudFormation/CDK types.  Whichever cloud has more resources wins; ties
-    (including no resources) default to ``"aws"``.
+    CloudFormation/CDK types.  Azure wins if it has more resources than AWS
+    as a whole.  Otherwise the AWS flavour follows the IaC tool: ``"cdk"``
+    when CloudFormation types outnumber Terraform ones, else ``"aws"``.
+    Ties (including no resources) default to ``"aws"``.
     """
-    aws = azure = 0
+    tf_aws = cfn_aws = azure = 0
     for r in resources:
         rtype = r.resource_type
-        if rtype.startswith(("aws_", "AWS::")):
-            aws += 1
+        if rtype.startswith("aws_"):
+            tf_aws += 1
+        elif rtype.startswith("AWS::"):
+            cfn_aws += 1
         elif rtype.startswith("azurerm_") or rtype.lower().startswith("microsoft."):
             azure += 1
-    return "azure" if azure > aws else "aws"
+    if azure > tf_aws + cfn_aws:
+        return "azure"
+    return "cdk" if cfn_aws > tf_aws else "aws"
 
 
 class RemediationAdvisor:

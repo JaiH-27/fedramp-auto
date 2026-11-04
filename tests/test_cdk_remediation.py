@@ -167,3 +167,9 @@ def test_report_command_reads_results_without_snippet_language(tmp_path):
     result = CliRunner().invoke(app, ["report", str(path), "-r"])
     assert result.exit_code == 0, result.output
     assert "```hcl" in result.output
+
+
+def test_cli_auto_detects_cdk_for_synthesized_templates(tmp_path):
+    data = _scan([str(CDK_FIXTURES)], tmp_path)
+    assert data["cloud"] == "cdk"
+    assert all(r["snippet_language"] == "typescript" for r in data["remediations"])
