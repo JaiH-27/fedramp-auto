@@ -8,6 +8,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import pytest
 
 from fedramp_auto.advisor.remediation import (
+    _STATIC_REMEDIATIONS,
+    _STATIC_REMEDIATIONS_CDK,
     SNIPPET_LANGUAGE,
     SUPPORTED_CLOUDS,
     RemediationAdvisor,
@@ -73,3 +75,38 @@ def test_generic_fallback_uses_typescript_comment():
 def test_generic_fallback_uses_hcl_comment_for_terraform():
     advice = RemediationAdvisor(llm_fallback=False, cloud="aws").advise_gap(_gap("KSI-AC-4"))
     assert advice.terraform_snippet.startswith("# ")
+
+
+# ── Static CDK library ────────────────────────────────────────────────────────
+# Compile + synth + "does it close the KSI" is checked by
+# scripts/check_cdk_snippets.py (needs Node.js); these are the fast checks.
+
+def test_cdk_library_covers_same_ksis_as_aws():
+    assert _STATIC_REMEDIATIONS_CDK.keys() == _STATIC_REMEDIATIONS.keys()
+
+
+@pytest.mark.parametrize("ksi_id", sorted(_STATIC_REMEDIATIONS_CDK))
+def test_cdk_snippet_shape(ksi_id):
+    entry = _STATIC_REMEDIATIONS_CDK[ksi_id]
+    code = entry["snippet"]
+    lines = code.splitlines()
+    assert lines[0].startswith("import "), "snippet must start with its imports"
+    assert all("'aws-cdk-lib" in ln for ln in lines if ln.startswith("import "))
+    assert "(this, '" in code, "constructs must be scoped to the stack"
+    assert 'resource "' not in code and "aws_" not in code, "Terraform leaked in"
+    for open_, close in ("{}", "()", "[]"):
+        assert code.count(open_) == code.count(close), f"unbalanced {open_}{close}"
+    assert entry["risk"] == _STATIC_REMEDIATIONS[ksi_id]["risk"]
+    assert len(entry["action"]) > 40
+
+
+def test_advisor_returns_static_cdk_snippet():
+    advice = RemediationAdvisor(llm_fallback=False, cloud="cdk").advise_gap(_gap("KSI-SC-2"))
+    assert advice.source == "static"
+    assert advice.cloud == "cdk" and advice.snippet_language == "typescript"
+    assert "new kms.Key(this, 'AppKey'" in advice.terraform_snippet
+
+
+def test_terraform_advice_unchanged_by_cdk_library():
+    advice = RemediationAdvisor(llm_fallback=False, cloud="aws").advise_gap(_gap("KSI-SC-2"))
+    assert advice.terraform_snippet == _STATIC_REMEDIATIONS["KSI-SC-2"]["terraform"]
