@@ -1,0 +1,33 @@
+/* The printed report: every view in sequence, always on a light page */
+@media print {
+  :root {
+    color-scheme: light;
+    --surface-0: #fff;
+    --surface-1: #fff;
+    --border: #ccc;
+    --grid: #e4e4e4;
+    --text-primary: #000;
+    --text-secondary: #444;
+  }
+
+  * { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+
+  .tabs, .controls, .filters, .snippet-bar button, .history-table button { display: none; }
+  .history-table td:first-child::after { content: attr(data-date); }
+
+  .top { padding: 0 0 8px; }
+  main { max-width: none; padding: 0; }
+
+  .view, .view[hidden] { display: block; }
+  .view::before {
+    content: attr(data-title);
+    display: block;
+    margin: 20px 0 10px;
+    font-size: 17px;
+    font-weight: 600;
+    break-after: avoid;
+  }
+
+  .tile, .panel, .ksi { break-inside: avoid; }
+  .fix pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+}

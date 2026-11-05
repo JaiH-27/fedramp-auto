@@ -15,9 +15,9 @@
     new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short" });
 
   function draw(box, points) {
-    const width = box.clientWidth;
-    const height = box.clientHeight;
-    if (!width) return;  // hidden tab: the observer calls again once it is shown
+    // A hidden tab has no size but must still print; the observer redraws once it is shown
+    const width = box.clientWidth || 720;
+    const height = box.clientHeight || 260;
 
     const times = points.map((p) => new Date(p.generated_at).getTime());
     const first = times[0];
@@ -95,6 +95,7 @@
 
   function trend(points) {
     const box = el("div", { class: "trend" });
+    draw(box, points);
     new ResizeObserver(() => draw(box, points)).observe(box);
     return box;
   }
@@ -108,8 +109,9 @@
   function table(points) {
     const rows = points.map((point, i) => {
       const row = el("tr", null,
-        el("td", null, el("button", { type: "button", onclick: () => selectScan(i) },
-          formatDate(point.generated_at))),
+        el("td", { "data-date": formatDate(point.generated_at) },
+          el("button", { type: "button", onclick: () => selectScan(i) },
+            formatDate(point.generated_at))),
         el("td", null, `${point.coverage_pct}%`),
         el("td", null, change(point, points[i - 1])),
         el("td", null, String(point.gap_count)),

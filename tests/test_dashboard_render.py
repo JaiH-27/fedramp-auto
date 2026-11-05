@@ -59,3 +59,8 @@ def test_every_view_registers_itself():
     page = render_page(_model())
     for view in VIEWS:
         assert f'id: "{view}"' in page
+
+
+def test_print_styles_come_last_so_they_win_over_dark_mode():
+    page = render_page(_model())
+    assert page.rindex("@media print") > page.rindex("prefers-color-scheme: dark")

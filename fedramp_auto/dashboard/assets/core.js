@@ -69,7 +69,9 @@ const Dash = (() => {
     const main = document.getElementById("views");
     for (const view of views) {
       tabs.append(el("button", { id: `tab-${view.id}`, onclick: () => showView(view.id) }, view.title));
-      main.append(el("section", { id: `view-${view.id}`, class: "view", hidden: true }));
+      main.append(el("section", {
+        id: `view-${view.id}`, class: "view", hidden: true, "data-title": view.title,
+      }));
     }
     document.getElementById("group").addEventListener("change", (e) => selectGroup(+e.target.value));
     document.getElementById("scan").addEventListener("change", (e) => selectScan(+e.target.value));

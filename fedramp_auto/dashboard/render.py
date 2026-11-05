@@ -43,8 +43,13 @@ def _embed_json(data: Any) -> str:
 
 def render_page(view_model: dict[str, Any]) -> str:
     """The complete dashboard page for *view_model*."""
-    styles = [_asset("core.css"), *(_asset(f"{view}.css") for view in VIEWS)]
-    scripts = [_asset("core.js"), *(_asset(f"{view}.js") for view in VIEWS), "Dash.start();"]
+    styles = [_asset("core.css"), *(_asset(f"{view}.css") for view in VIEWS), _asset("print.css")]
+    scripts = [
+        _asset("core.js"),
+        *(_asset(f"{view}.js") for view in VIEWS),
+        _asset("print.js"),
+        "Dash.start();",
+    ]
     slots = {
         "STYLES": "\n".join(styles),
         "DATA": _embed_json(view_model),
