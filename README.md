@@ -261,14 +261,65 @@ Options:
 
 ## CI/CD integration
 
-Add to your GitHub Actions workflow to block PRs that introduce critical compliance gaps:
+### GitHub Action: compliance check on every pull request
+
+The repository is a GitHub Action. On a pull request it scans the PR and its
+base branch, then posts **one comment that updates on every push**. The
+comment shows KSI coverage and its change, new and resolved gaps, and fixes
+for the new gaps. The check fails only when the PR *introduces* a critical
+gap, so existing gaps don't block unrelated work.
 
 ```yaml
-- name: FedRAMP compliance scan
-  run: |
-    pip install fedramp-auto
-    fedramp-auto scan ./infra --baseline low --no-llm --output ./fedramp-output
-  # Exit code 2 = critical gaps found → PR blocked
+# .github/workflows/fedramp.yml
+name: FedRAMP compliance
+on: pull_request
+
+permissions:
+  contents: read
+  pull-requests: write   # to post the comment
+
+jobs:
+  fedramp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # CDK apps: synthesize first, then scan cdk.out
+      # - run: npm ci && npx cdk synth
+      - uses: JaiH-27/fedramp-auto@main   # pin to a commit SHA for production
+        with:
+          path: infra
+          baseline: moderate
+```
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `path` | `.` | Directory to scan |
+| `format` | `auto` | `auto` \| `terraform` \| `arm` \| `cdk` |
+| `baseline` | `low` | `low` \| `moderate` |
+| `cloud` | `auto` | Fix snippets: `auto` \| `aws` \| `azure` \| `cdk` |
+| `fail-on` | `new-critical` | `new-critical` \| `any-critical` \| `never` |
+| `comment` | `true` | Post / update the PR comment |
+| `comment-id` | the path | Keeps several comments apart (e.g. one job per stack) |
+| `upload-artifact` | `true` | Upload `scan_result.json`, `report.md`, `ssp.json` |
+
+Outputs: `coverage`, `coverage-delta`, `new-gaps`, `new-critical-gaps`,
+`resolved-gaps`, `failed`. The comment is also written to the job summary.
+
+**Privacy:** the action runs on your own runner with static rules only
+(`--no-llm`). Infrastructure code isn't sent anywhere; the only network call
+is the PR comment to the GitHub API. Pull requests from forks get a read-only
+token, so the comment is skipped with a warning, and the job summary still has
+the report.
+
+This repository runs the action on its own `tests/fixtures` for every PR
+(`.github/workflows/fedramp-scan.yml`).
+
+### Any other CI
+
+```bash
+fedramp-auto scan ./infra --no-llm -o head          # exit 2 = critical gaps
+fedramp-auto pr-comment head/scan_result.json --base base/scan_result.json \
+    -o comment.md --fail-on new-critical            # exit 2 = policy failed
 ```
 
 ---
@@ -284,8 +335,9 @@ Add to your GitHub Actions workflow to block PRs that introduce critical complia
 | `fedramp_auto.gaps.detector` | KSI gap analysis (29 Low / 33 Moderate KSIs) |
 | `fedramp_auto.advisor.remediation` | Per-gap fix guidance + snippets (Terraform `aws` / `azurerm`, AWS CDK) |
 | `fedramp_auto.oscal` | OSCAL SSP generation via `compliance-trestle` |
+| `fedramp_auto.ci` | PR scan diff, PR comment rendering and posting (GitHub Action) |
 | `fedramp_auto.dashboard` | Local web dashboard: one self-contained page, served on loopback or exported |
-| `fedramp_auto.cli.main` | Typer CLI (scan / report / dashboard / validate) |
+| `fedramp_auto.cli.main` | Typer CLI (scan / report / pr-comment / dashboard / validate) |
 
 ---
 
@@ -308,7 +360,8 @@ Add to your GitHub Actions workflow to block PRs that introduce critical complia
 - [x] Azure (`azurerm`) remediation snippets
 - [x] AWS CDK support (via `cdk synth` → CloudFormation)
 - [x] AWS CDK remediation snippets
-- [ ] GitHub App for automated PR comments
+- [x] GitHub Action for automated PR comments
+- [ ] GitHub App (org-wide install, Checks API annotations)
 - [x] Web dashboard
 
 ---

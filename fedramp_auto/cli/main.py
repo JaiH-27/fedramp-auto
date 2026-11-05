@@ -415,6 +415,76 @@ def report(
             console.print("```")
 
 
+# ── pr-comment command ────────────────────────────────────────────────────────
+
+@app.command("pr-comment")
+def pr_comment(
+    head_result: Annotated[
+        Path, typer.Argument(help="scan_result.json for the pull request head")
+    ],
+    base: Annotated[
+        Path | None,
+        typer.Option("--base", help="scan_result.json for the base branch (omit if none)"),
+    ] = None,
+    output: Annotated[
+        Path, typer.Option("--output", "-o", help="Where to write the Markdown comment")
+    ] = Path("fedramp-comment.md"),
+    fail_on: Annotated[
+        str,
+        typer.Option("--fail-on", help="new-critical | any-critical | never"),
+    ] = "new-critical",
+    comment_id: Annotated[
+        str,
+        typer.Option("--comment-id", help="Distinguishes several FedRAMP comments on one PR"),
+    ] = "default",
+    summary_json: Annotated[
+        Path | None,
+        typer.Option("--summary-json", help="Also write a machine-readable summary here"),
+    ] = None,
+) -> None:
+    """
+    Compare a PR scan with its base branch and write a PR comment.
+
+    Exits 2 when the --fail-on policy is triggered, so CI can fail the check.
+    """
+    from fedramp_auto.ci.pr_comment import render_comment
+    from fedramp_auto.ci.pr_diff import FAIL_POLICIES, compare, load_result, should_fail
+
+    if fail_on not in FAIL_POLICIES:
+        err_console.print(f"[red]--fail-on must be one of: {', '.join(FAIL_POLICIES)}[/red]")
+        raise typer.Exit(1)
+    if not head_result.exists():
+        err_console.print(f"[red]File not found: {head_result}[/red]")
+        raise typer.Exit(1)
+
+    head = load_result(head_result)
+    base_data = load_result(base)
+    if base is not None and base_data is None:
+        err_console.print(
+            f"[yellow]Base result not found ({base}); comparing against nothing[/yellow]"
+        )
+
+    diff = compare(head, base_data)  # type: ignore[arg-type]
+    policy = fail_on  # validated above
+    output.write_text(
+        render_comment(diff, policy=policy, comment_id=comment_id),  # type: ignore[arg-type]
+        encoding="utf-8",
+    )
+    summary = diff.summary(policy)  # type: ignore[arg-type]
+    if summary_json is not None:
+        summary_json.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+
+    delta = "" if summary["coverage_delta"] is None else f" ({summary['coverage_delta']:+.1f} pts)"
+    console.print(
+        f"Coverage {summary['coverage_pct']}%{delta} · "
+        f"{summary['new_gaps']} new gap(s), {summary['resolved_gaps']} resolved · "
+        f"comment written to {output}"
+    )
+    if should_fail(diff, policy):  # type: ignore[arg-type]
+        err_console.print(f"[red]Failing per --fail-on {policy}[/red]")
+        raise typer.Exit(2)
+
+
 # ── dashboard command ─────────────────────────────────────────────────────────
 
 @app.command()
