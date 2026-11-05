@@ -100,6 +100,9 @@ poetry run fedramp-auto report ./output/scan_result.json --remediations
 
 # Full markdown report
 open ./output/report.md
+
+# Browse everything in a local web page
+poetry run fedramp-auto dashboard ./output
 ```
 
 ### 6. Validate an OSCAL SSP
@@ -219,6 +222,32 @@ Options:
   --remediations  -r   Print remediation snippets (Terraform or CDK)
 ```
 
+### `fedramp-auto dashboard`
+
+```
+fedramp-auto dashboard [RESULTS] [OPTIONS]
+
+Arguments:
+  RESULTS              Folder of scan results, or one scan_result.json [default: ./output]
+
+Options:
+  --port    -p  INT    Local port to serve on, 0 picks a free one  [default: 8765]
+  --export  -e  FILE   Write a standalone HTML file instead of serving
+  --no-open            Do not open a browser
+```
+
+The dashboard is for the people who review results rather than run scans:
+
+- **Overview:** KSI coverage, open gaps by severity, baseline and cloud.
+- **KSIs:** every KSI in the baseline. Expand one to see the resources and rationale behind each control.
+- **Remediation:** fix guidance and snippets for each gap, most severe first.
+- **History:** coverage over time. Every scan keeps a timestamped copy in `output/history/`.
+- **Print report:** all of the above as one printable document.
+
+`RESULTS` is searched recursively, so one folder can hold several projects. Scans are grouped by scanned directory and baseline.
+
+It stays local. The server only listens on `127.0.0.1`, and the page has no external dependencies: a Content-Security-Policy blocks every network request. `--export` gives you a single file to share. Source paths in it are trimmed to the part that differs between files, but it does contain your resource names and findings.
+
 ### `fedramp-auto validate`
 
 ```
@@ -255,7 +284,8 @@ Add to your GitHub Actions workflow to block PRs that introduce critical complia
 | `fedramp_auto.gaps.detector` | 56/61 KSI gap analysis |
 | `fedramp_auto.advisor.remediation` | Per-gap fix guidance + snippets (Terraform `aws` / `azurerm`, AWS CDK) |
 | `fedramp_auto.oscal` | OSCAL SSP generation via `compliance-trestle` |
-| `fedramp_auto.cli.main` | Typer CLI (scan / report / validate) |
+| `fedramp_auto.dashboard` | Local web dashboard: one self-contained page, served on loopback or exported |
+| `fedramp_auto.cli.main` | Typer CLI (scan / report / dashboard / validate) |
 
 ---
 
@@ -279,7 +309,7 @@ Add to your GitHub Actions workflow to block PRs that introduce critical complia
 - [x] AWS CDK support (via `cdk synth` → CloudFormation)
 - [x] AWS CDK remediation snippets
 - [ ] GitHub App for automated PR comments
-- [ ] Web dashboard
+- [x] Web dashboard
 
 ---
 

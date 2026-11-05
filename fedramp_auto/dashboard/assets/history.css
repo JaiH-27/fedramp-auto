@@ -1,0 +1,37 @@
+.trend { position: relative; height: 260px; }
+.trend svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.trend .grid-line { stroke: var(--grid); stroke-width: 1; }
+.trend .axis-label { fill: var(--text-secondary); font-size: 12px; }
+.trend .value-label { fill: var(--text-primary); font-size: 12px; font-weight: 600; }
+.trend .line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
+.trend .point { fill: var(--accent); stroke: var(--surface-1); stroke-width: 2; }
+.trend .crosshair { stroke: var(--text-secondary); stroke-width: 1; }
+
+.tooltip {
+  position: absolute;
+  top: 8px;
+  z-index: 1;
+  padding: 6px 10px;
+  font-size: 13px;
+  white-space: nowrap;
+  pointer-events: none;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 15%);
+}
+
+.tooltip strong { display: block; font-size: 15px; }
+
+.history-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.history-table th, .history-table td {
+  padding: 8px 12px 8px 0;
+  text-align: right;
+  border-bottom: 1px solid var(--grid);
+}
+.history-table th { color: var(--text-secondary); font-size: 13px; font-weight: 400; }
+.history-table th:first-child, .history-table td:first-child { text-align: left; }
+.history-table tr[aria-current="true"] td { font-weight: 600; }
+.history-table button { border: 0; padding: 0; background: none; font: inherit; color: inherit; text-decoration: underline; }
+
+.table-scroll { overflow-x: auto; }

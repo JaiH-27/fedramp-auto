@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>FedRAMP-Auto dashboard</title>
+<style>__STYLES__</style>
+</head>
+<body>
+<header class="top">
+  <h1>FedRAMP-Auto</h1>
+  <div class="controls">
+    <label>Project <select id="group"></select></label>
+    <label>Scan <select id="scan"></select></label>
+  </div>
+</header>
+<nav class="tabs" id="tabs" aria-label="Dashboard sections"></nav>
+<main id="views"></main>
+<script type="application/json" id="scan-data">__DATA__</script>
+<script>__SCRIPTS__</script>
+</body>
+</html>
