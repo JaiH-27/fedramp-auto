@@ -8,6 +8,7 @@ Commands
   scan      Ingest a directory of Terraform / Azure ARM / AWS CDK files and run full analysis.
   report    Print or export a gap report from a previous scan result.
   validate  Run the FedRAMP OSCAL schema validator against an SSP file.
+  dashboard Browse scan results in a local web page.
 
 Usage
 -----
@@ -16,6 +17,7 @@ Usage
   fedramp-auto scan ./my-cdk-app --format cdk          # after `cdk synth`
   fedramp-auto report ./output/scan_result.json
   fedramp-auto validate ./output/ssp.json
+  fedramp-auto dashboard ./output
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ from __future__ import annotations
 import json
 import logging
 import sys
+import webbrowser
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, TextIO
@@ -410,6 +413,74 @@ def report(
             console.print(f"```{rem.get('snippet_language', 'hcl')}")
             console.print(rem["terraform_snippet"])
             console.print("```")
+
+
+# ── dashboard command ─────────────────────────────────────────────────────────
+
+@app.command()
+def dashboard(
+    results: Annotated[
+        Path, typer.Argument(help="Folder of scan results, or one scan_result.json")
+    ] = Path("./output"),
+    port: Annotated[
+        int, typer.Option("--port", "-p", help="Local port to serve on (0 picks a free one)")
+    ] = 8765,
+    export: Annotated[
+        Path | None,
+        typer.Option("--export", "-e", help="Write a standalone HTML file instead of serving"),
+    ] = None,
+    no_open: Annotated[
+        bool, typer.Option("--no-open", help="Do not open a browser")
+    ] = False,
+) -> None:
+    """
+    Browse scan results in a local web page.
+
+    Shows KSI coverage, gaps with the resources behind each control, remediation
+    snippets, and coverage history. Everything stays on this machine: the server
+    only listens on 127.0.0.1 and the page loads nothing from the network.
+    """
+    from fedramp_auto.dashboard.loader import load_scans
+    from fedramp_auto.dashboard.render import render_page
+    from fedramp_auto.dashboard.server import HOST, make_server
+    from fedramp_auto.dashboard.view_model import build_view_model
+
+    if not results.exists():
+        err_console.print(f"[red]Path not found: {results}[/red]")
+        raise typer.Exit(1)
+
+    def build_page() -> str:
+        return render_page(build_view_model(load_scans(results).groups))
+
+    loaded = load_scans(results)
+    for warning in loaded.warnings:
+        err_console.print(f"[yellow]{warning}[/yellow]", soft_wrap=True)
+    if not loaded.groups:
+        err_console.print(f"[red]No scan results found in {results}. Run a scan first.[/red]")
+        raise typer.Exit(1)
+
+    if export is not None:
+        export.parent.mkdir(parents=True, exist_ok=True)
+        export.write_text(build_page(), encoding="utf-8")
+        console.print(f"[green]Dashboard saved:[/green] {export}")
+        return
+
+    try:
+        server = make_server(build_page, port)
+    except OSError as exc:
+        err_console.print(f"[red]Could not use port {port}: {exc}. Try --port 0.[/red]")
+        raise typer.Exit(1) from exc
+
+    url = f"http://{HOST}:{server.server_address[1]}/"
+    console.print(f"[green]Dashboard running at[/green] {url}  [dim](Ctrl+C to stop)[/dim]")
+    if not no_open:
+        webbrowser.open(url)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        console.print("Stopped.")
+    finally:
+        server.server_close()
 
 
 # ── validate command ──────────────────────────────────────────────────────────
