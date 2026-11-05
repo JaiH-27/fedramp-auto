@@ -26,7 +26,7 @@ class Severity(str, Enum):
 
 # ── KSI catalogue ────────────────────────────────────────────────────────────
 # Each KSI maps to one or more NIST 800-53 Rev5 control IDs.
-# FedRAMP 20x: 56 KSIs for Low baseline, 61 for Moderate (5 additional).
+# A working subset of the FedRAMP 20x KSIs: test_ksi_catalogue.py pins the counts.
 # Format: (ksi_id, title, [control_ids], severity, baselines)
 
 @dataclass(frozen=True)
