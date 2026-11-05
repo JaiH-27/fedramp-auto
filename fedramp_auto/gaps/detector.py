@@ -263,6 +263,11 @@ def detect_gaps(
     )
 
 
+def ksis_for_baseline(baseline: Baseline = "low") -> list[KSI]:
+    """Return the KSIs that apply to the given baseline."""
+    return [k for k in _KSI_CATALOGUE if baseline in k.baselines]
+
+
 def all_ksi_ids(baseline: Baseline = "low") -> list[str]:
     """Return all KSI IDs for the given baseline."""
-    return [k.ksi_id for k in _KSI_CATALOGUE if baseline in k.baselines]
+    return [k.ksi_id for k in ksis_for_baseline(baseline)]
