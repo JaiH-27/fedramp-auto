@@ -1,0 +1,23 @@
+.fix h2 { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; margin-bottom: 8px; }
+.fix p { margin: 0 0 8px; }
+.fix .ksi-id { font-weight: 400; }
+
+.snippet-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 8px;
+}
+
+.fix summary { cursor: pointer; color: var(--text-secondary); }
+
+.fix pre {
+  margin: 8px 0 0;
+  padding: 12px;
+  overflow-x: auto;
+  font-size: 13px;
+  line-height: 1.45;
+  background: var(--surface-0);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
