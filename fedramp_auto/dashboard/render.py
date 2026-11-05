@@ -19,7 +19,7 @@ from typing import Any
 ASSETS = Path(__file__).parent / "assets"
 
 # Load order: tabs appear in this order
-VIEWS: tuple[str, ...] = ("overview", "ksi", "remediation",)
+VIEWS: tuple[str, ...] = ("overview", "ksi", "remediation", "history",)
 
 _SLOT = re.compile(r"__(STYLES|DATA|SCRIPTS)__")
 _UNSAFE_IN_SCRIPT = {
