@@ -102,6 +102,16 @@ def _severity_colour(severity: str) -> str:
     )
 
 
+def _archive_result(result_path: Path, generated_at: str) -> Path:
+    """Keep a timestamped copy, because each scan overwrites scan_result.json."""
+    stamp = datetime.fromisoformat(generated_at).strftime("%Y%m%dT%H%M%S%fZ")
+    history = result_path.parent / "history"
+    history.mkdir(exist_ok=True)
+    archived = history / f"scan_result-{stamp}.json"
+    archived.write_bytes(result_path.read_bytes())
+    return archived
+
+
 def _print_gap_table(gaps: list[dict]) -> None:
     table = Table(box=box.SIMPLE_HEAVY, show_header=True, header_style="bold")
     table.add_column("KSI", style="dim", width=12)
@@ -314,6 +324,7 @@ def scan(
 
     result_path = output / "scan_result.json"
     result_path.write_text(json.dumps(scan_result, indent=2))
+    _archive_result(result_path, scan_result["generated_at"])
 
     # ── Generate OSCAL SSP ────────────────────────────────────────────────────
     ssp_path = output / "ssp.json"

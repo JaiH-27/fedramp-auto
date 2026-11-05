@@ -37,3 +37,11 @@ def test_report_still_reads_results_saved_without_the_new_fields(tmp_path):
     legacy = tmp_path / "legacy.json"
     legacy.write_text(json.dumps(data))
     assert CliRunner().invoke(app, ["report", str(legacy)]).exit_code == 0
+
+
+def test_each_scan_keeps_a_copy_in_history(tmp_path):
+    first = _scan(tmp_path)
+    second = _scan(tmp_path)
+    archived = [json.loads(p.read_text()) for p in sorted((tmp_path / "history").glob("*.json"))]
+    assert [a["generated_at"] for a in archived] == [first["generated_at"],
+                                                     second["generated_at"]]
