@@ -2,11 +2,11 @@
 name = "fedramp-auto"
 version = "0.1.0"
 description = "Automated FedRAMP 20x compliance engine — IaC to OSCAL via local LLM"
-authors = ["Your Name <you@example.com>"]
+authors = ["Jai Harish"]
 readme = "README.md"
 license = "MIT"
-homepage = "https://github.com/yourorg/fedramp-auto"
-repository = "https://github.com/yourorg/fedramp-auto"
+homepage = "https://github.com/JaiH-27/fedramp-auto"
+repository = "https://github.com/JaiH-27/fedramp-auto"
 keywords = ["fedramp", "oscal", "compliance", "terraform", "nist"]
 classifiers = [
     "Development Status :: 3 - Alpha",
