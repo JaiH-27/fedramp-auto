@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import logging
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, TextIO
 
@@ -269,6 +270,8 @@ def scan(
 
     # ── Save JSON result ───────────────────────────────────────────────────────
     scan_result = {
+        "generated_at": datetime.now(UTC).isoformat(),
+        "target": infra_dir.resolve().name,
         "baseline": baseline,
         "cloud": snippet_cloud,
         "coverage_pct": gap_report.coverage_pct,
