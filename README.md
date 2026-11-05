@@ -18,7 +18,7 @@ Local CLI agent          ← strips secrets/PII before anything else runs
 Mistral 7B (Ollama)      ← maps resources to NIST 800-53 controls
      │
      ▼
-KSI gap detector         ← compares against 56 (Low) / 61 (Moderate) FedRAMP KSIs
+KSI gap detector         ← compares against 29 (Low) / 33 (Moderate) FedRAMP KSIs
      │
      ▼
 Remediation advisor      ← plain-English fixes + snippets per gap (Terraform aws / azurerm, or CDK)
@@ -78,7 +78,7 @@ Output:
     Output    : ./output
 
   FedRAMP 20x LOW baseline gap report
-    KSI coverage : 18/32 (56.3%)
+    KSI coverage : 18/29 (62.1%)
     Critical gaps: 4
     High gaps    : 6
     Total gaps   : 14
@@ -281,7 +281,7 @@ Add to your GitHub Actions workflow to block PRs that introduce critical complia
 | `fedramp_auto.parser.arm` | Parses Azure ARM JSON templates into the same model |
 | `fedramp_auto.parser.cloudformation` | Parses CloudFormation / CDK-synthesized templates into the same model |
 | `fedramp_auto.mapper.control_mapper` | Static rules + Mistral 7B → NIST 800-53 controls |
-| `fedramp_auto.gaps.detector` | 56/61 KSI gap analysis |
+| `fedramp_auto.gaps.detector` | KSI gap analysis (29 Low / 33 Moderate KSIs) |
 | `fedramp_auto.advisor.remediation` | Per-gap fix guidance + snippets (Terraform `aws` / `azurerm`, AWS CDK) |
 | `fedramp_auto.oscal` | OSCAL SSP generation via `compliance-trestle` |
 | `fedramp_auto.dashboard` | Local web dashboard: one self-contained page, served on loopback or exported |
