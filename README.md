@@ -138,6 +138,8 @@ Options:
   --ollama-url     Ollama API URL             [default: http://localhost:11434]
   --no-llm         Static rules only, no LLM
   --verbose   -v   Debug logging
+  --webhook        POST a scan summary to this URL      [env: FEDRAMP_WEBHOOK_URL]
+  --webhook-secret Sign it with HMAC-SHA256             [env: FEDRAMP_WEBHOOK_SECRET]
 ```
 
 Exit codes: `0` = no critical gaps, `2` = critical gaps found (useful in CI).
@@ -220,6 +222,38 @@ fedramp-auto report RESULT_FILE [OPTIONS]
 
 Options:
   --remediations  -r   Print remediation snippets (Terraform or CDK)
+```
+
+### `fedramp-auto notify` and webhooks (n8n)
+
+```
+fedramp-auto notify RESULT_FILE [OPTIONS]
+
+Options:
+  --webhook         URL to POST to                       [env: FEDRAMP_WEBHOOK_URL]
+  --webhook-secret  HMAC-SHA256 signing secret           [env: FEDRAMP_WEBHOOK_SECRET]
+  --previous        Scan to compare against [default: newest earlier scan in history/]
+```
+
+`scan --webhook URL` (or `FEDRAMP_WEBHOOK_URL`) sends the same summary after
+every scan; `notify` sends one for a result you already have. The payload lists
+**new**, **resolved** and **open** gaps since the previous scan of the same
+directory and baseline, with remediation advice for each open gap. With a
+secret, the body is signed as `X-FedRAMP-Auto-Signature: sha256=<hex>`.
+
+Resource names, file paths and infrastructure code are not sent. A failed
+webhook is reported as a warning and never changes `scan`'s exit code
+(`notify` exits 1).
+
+[`examples/n8n`](examples/n8n) has a ready-to-import n8n workflow and a Docker
+Compose file: it posts a Slack summary when anything changes, opens a GitHub
+issue for each new critical/high gap, and closes it when the gap is resolved.
+
+```bash
+cd examples/n8n && cp .env.example .env && docker compose up -d
+export FEDRAMP_WEBHOOK_URL=http://localhost:5678/webhook/fedramp-auto
+export FEDRAMP_WEBHOOK_SECRET=...   # same as in .env
+fedramp-auto scan ./infra --no-llm
 ```
 
 ### `fedramp-auto dashboard`
@@ -337,7 +371,8 @@ fedramp-auto pr-comment head/scan_result.json --base base/scan_result.json \
 | `fedramp_auto.oscal` | OSCAL SSP generation via `compliance-trestle` |
 | `fedramp_auto.ci` | PR scan diff, PR comment rendering and posting (GitHub Action) |
 | `fedramp_auto.dashboard` | Local web dashboard: one self-contained page, served on loopback or exported |
-| `fedramp_auto.cli.main` | Typer CLI (scan / report / pr-comment / dashboard / validate) |
+| `fedramp_auto.integrations.webhook` | Signed scan-summary webhook (new / resolved / open gaps) for n8n and others |
+| `fedramp_auto.cli.main` | Typer CLI (scan / report / pr-comment / notify / dashboard / validate) |
 
 ---
 
@@ -347,6 +382,8 @@ fedramp-auto pr-comment head/scan_result.json --base base/scan_result.json \
 - The parser strips string values matching secret patterns before any processing.
 - Mistral 7B runs locally via Ollama — no data sent to any cloud API.
 - Only sanitized resource *type* and *attribute name* data is passed to the model.
+- Nothing is sent anywhere unless you opt in with `--webhook`; the webhook carries
+  findings (KSIs, controls, coverage, fixes), never resource names, paths or code.
 
 ---
 
@@ -363,6 +400,7 @@ fedramp-auto pr-comment head/scan_result.json --base base/scan_result.json \
 - [x] GitHub Action for automated PR comments
 - [ ] GitHub App (org-wide install, Checks API annotations)
 - [x] Web dashboard
+- [x] Signed webhooks + n8n workflow (Slack alerts, GitHub issues opened and closed per gap)
 
 ---
 

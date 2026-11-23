@@ -9,6 +9,7 @@ Commands
   report    Print or export a gap report from a previous scan result.
   validate  Run the FedRAMP OSCAL schema validator against an SSP file.
   dashboard Browse scan results in a local web page.
+  notify    Send a scan summary to a webhook (e.g. n8n).
 
 Usage
 -----
@@ -132,6 +133,25 @@ def _print_gap_table(gaps: list[dict]) -> None:
     console.print(table)
 
 
+def _send_webhook(result_path: Path, url: str, secret: str | None,
+                  previous: Path | None) -> bool:
+    """Send the scan summary; print the outcome. True if delivered."""
+    from fedramp_auto.integrations.webhook import WebhookError, notify, redact_url
+
+    try:
+        payload, sent = notify(result_path, url, secret, previous)
+    except WebhookError as exc:
+        err_console.print(f"[yellow]Webhook not delivered: {exc}[/yellow]")
+        return False
+    s = payload["summary"]
+    signed = "signed" if secret else "unsigned"
+    console.print(
+        f"[green]Webhook sent[/green] to {redact_url(url)} ({signed}, HTTP {sent.status}) · "
+        f"{s['new_gaps']} new gap(s), {s['resolved_gaps']} resolved"
+    )
+    return True
+
+
 # ── scan command ──────────────────────────────────────────────────────────────
 
 @app.command()
@@ -163,6 +183,16 @@ def scan(
         bool, typer.Option("--no-llm", help="Disable LLM fallback (static rules only)")
     ] = False,
     verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False,
+    webhook: Annotated[
+        str | None,
+        typer.Option("--webhook", envvar="FEDRAMP_WEBHOOK_URL",
+                     help="POST a scan summary to this URL (e.g. an n8n webhook)"),
+    ] = None,
+    webhook_secret: Annotated[
+        str | None,
+        typer.Option("--webhook-secret", envvar="FEDRAMP_WEBHOOK_SECRET",
+                     help="Sign the webhook body with HMAC-SHA256 (prefer the env var)"),
+    ] = None,
 ) -> None:
     """
     Scan an infrastructure-as-code directory for FedRAMP compliance gaps.
@@ -189,6 +219,14 @@ def scan(
     if not infra_dir.exists():
         err_console.print(f"[red]Directory not found: {infra_dir}[/red]")
         raise typer.Exit(1)
+
+    if webhook:
+        from fedramp_auto.integrations.webhook import WebhookError, validate_url
+        try:
+            validate_url(webhook)
+        except WebhookError as exc:
+            err_console.print(f"[red]--webhook: {exc}[/red]")
+            raise typer.Exit(1) from exc
 
     output.mkdir(parents=True, exist_ok=True)
 
@@ -368,6 +406,10 @@ def scan(
     console.print(f"  {ssp_path}")
     console.print()
 
+    # A failed webhook is reported but never changes the scan's exit code
+    if webhook:
+        _send_webhook(result_path, webhook, webhook_secret, previous=None)
+
     # Exit non-zero if there are critical gaps (useful in CI)
     if gap_report.critical_gaps:
         raise typer.Exit(2)
@@ -483,6 +525,51 @@ def pr_comment(
     if should_fail(diff, policy):  # type: ignore[arg-type]
         err_console.print(f"[red]Failing per --fail-on {policy}[/red]")
         raise typer.Exit(2)
+
+
+# ── notify command ────────────────────────────────────────────────────────────
+
+@app.command()
+def notify(
+    result_file: Annotated[Path, typer.Argument(help="scan_result.json to send")],
+    webhook: Annotated[
+        str,
+        typer.Option("--webhook", envvar="FEDRAMP_WEBHOOK_URL",
+                     help="URL to POST the scan summary to (e.g. an n8n webhook)"),
+    ],
+    webhook_secret: Annotated[
+        str | None,
+        typer.Option("--webhook-secret", envvar="FEDRAMP_WEBHOOK_SECRET",
+                     help="Sign the body with HMAC-SHA256 (prefer the env var)"),
+    ] = None,
+    previous: Annotated[
+        Path | None,
+        typer.Option("--previous",
+                     help="Scan to compare against [default: newest earlier scan in history/]"),
+    ] = None,
+) -> None:
+    """
+    Send a saved scan result to a webhook (n8n, Zapier, your own endpoint).
+
+    The payload lists new, resolved and open gaps with remediation advice.
+    Resource names, file paths and infrastructure code are not sent.
+    """
+    from fedramp_auto.integrations.webhook import WebhookError, validate_url
+
+    if not result_file.exists():
+        err_console.print(f"[red]File not found: {result_file}[/red]")
+        raise typer.Exit(1)
+    if previous is not None and not previous.exists():
+        err_console.print(f"[red]File not found: {previous}[/red]")
+        raise typer.Exit(1)
+    try:
+        validate_url(webhook)
+    except WebhookError as exc:
+        err_console.print(f"[red]--webhook: {exc}[/red]")
+        raise typer.Exit(1) from exc
+
+    if not _send_webhook(result_file, webhook, webhook_secret, previous):
+        raise typer.Exit(1)
 
 
 # ── dashboard command ─────────────────────────────────────────────────────────

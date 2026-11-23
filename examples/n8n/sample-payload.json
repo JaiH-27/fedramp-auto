@@ -1,0 +1,76 @@
+{
+  "event": "fedramp_auto.scan.completed",
+  "schema_version": 1,
+  "generated_at": "2026-11-23T09:15:02.481233+00:00",
+  "target": "infra",
+  "baseline": "low",
+  "cloud": "aws",
+  "coverage": {
+    "pct": 65.5,
+    "previous_pct": 62.1,
+    "delta": 3.4,
+    "satisfied_ksis": 19,
+    "total_ksis": 29
+  },
+  "summary": {
+    "open_gaps": 2,
+    "critical_gaps": 1,
+    "new_gaps": 1,
+    "new_critical_gaps": 1,
+    "resolved_gaps": 1,
+    "has_previous": true
+  },
+  "new_gaps": [
+    {
+      "ksi_id": "KSI-SVC-02",
+      "title": "Encrypt network traffic",
+      "severity": "critical",
+      "missing_controls": ["SC-8", "SC-13"],
+      "remediation": {
+        "risk_explanation": "Traffic between clients and services can be read or altered in transit.",
+        "remediation_action": "Terminate TLS 1.2+ on every load balancer listener and redirect HTTP to HTTPS.",
+        "terraform_snippet": "resource \"aws_lb_listener\" \"https\" {\n  port       = 443\n  protocol   = \"HTTPS\"\n  ssl_policy = \"ELBSecurityPolicy-TLS13-1-2-2021-06\"\n}",
+        "snippet_language": "hcl",
+        "cloud": "aws",
+        "source": "static"
+      }
+    }
+  ],
+  "resolved_gaps": [
+    {
+      "ksi_id": "KSI-MLA-01",
+      "title": "Centralised audit logging",
+      "severity": "high",
+      "missing_controls": ["AU-2", "AU-6"]
+    }
+  ],
+  "open_gaps": [
+    {
+      "ksi_id": "KSI-SVC-02",
+      "title": "Encrypt network traffic",
+      "severity": "critical",
+      "missing_controls": ["SC-8", "SC-13"],
+      "remediation": {
+        "risk_explanation": "Traffic between clients and services can be read or altered in transit.",
+        "remediation_action": "Terminate TLS 1.2+ on every load balancer listener and redirect HTTP to HTTPS.",
+        "terraform_snippet": "resource \"aws_lb_listener\" \"https\" {\n  port       = 443\n  protocol   = \"HTTPS\"\n  ssl_policy = \"ELBSecurityPolicy-TLS13-1-2-2021-06\"\n}",
+        "snippet_language": "hcl",
+        "cloud": "aws",
+        "source": "static"
+      }
+    },
+    {
+      "ksi_id": "KSI-RPL-01",
+      "title": "Backups and recovery",
+      "severity": "medium",
+      "missing_controls": ["CP-9"],
+      "remediation": null
+    }
+  ],
+  "ci": {
+    "repository": "your-org/your-infra",
+    "ref": "refs/heads/main",
+    "sha": "4f1c2e9a7b3d5e6f8a9b0c1d2e3f4a5b6c7d8e9f",
+    "url": "https://github.com/your-org/your-infra/actions/runs/123456789"
+  }
+}
