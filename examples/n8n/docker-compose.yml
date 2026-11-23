@@ -1,0 +1,34 @@
+# Self-hosted n8n for the FedRAMP-Auto workflow. See README.md in this folder.
+#
+#   cp .env.example .env      # then fill it in
+#   docker compose up -d
+#   open http://localhost:5678
+#
+# n8n only listens on 127.0.0.1. To receive webhooks from GitHub-hosted
+# runners, put it behind HTTPS (reverse proxy or tunnel) and set WEBHOOK_URL.
+
+services:
+  n8n:
+    # Pin a version you have tested, e.g. N8N_VERSION=1.x.y in .env
+    image: docker.n8n.io/n8nio/n8n:${N8N_VERSION:-latest}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5678:5678"
+    environment:
+      - GENERIC_TIMEZONE=${TZ:-UTC}
+      - TZ=${TZ:-UTC}
+      - WEBHOOK_URL=${WEBHOOK_URL:-http://localhost:5678/}
+      # The Code nodes read FEDRAMP_* settings with $env and verify the
+      # signature with Node's crypto module.
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+      - NODE_FUNCTION_ALLOW_BUILTIN=crypto
+      - FEDRAMP_WEBHOOK_SECRET=${FEDRAMP_WEBHOOK_SECRET:?set FEDRAMP_WEBHOOK_SECRET in .env}
+      - FEDRAMP_GITHUB_REPO=${FEDRAMP_GITHUB_REPO:-}
+      - FEDRAMP_ISSUE_SEVERITIES=${FEDRAMP_ISSUE_SEVERITIES:-critical,high}
+      - FEDRAMP_SLACK_WEBHOOK_URL=${FEDRAMP_SLACK_WEBHOOK_URL:-}
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./fedramp-gap-alerts.json:/workflows/fedramp-gap-alerts.json:ro
+
+volumes:
+  n8n_data:

@@ -1,0 +1,358 @@
+{
+  "name": "FedRAMP-Auto: gap alerts and GitHub issues",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "fedramp-auto",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "3beddcf4-a19a-4c35-aca9-7c445b2c8773",
+      "name": "Scan webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ],
+      "webhookId": "13949a95-d604-4204-ae03-7c9d12215af5"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Checks the request was signed by fedramp-auto with FEDRAMP_WEBHOOK_SECRET\n// (HMAC-SHA256 of the raw body, header X-FedRAMP-Auto-Signature).\n// Never throws: \"Respond\" answers 202 or 401, then \"Accept scan\" stops rejected requests.\n// Needs NODE_FUNCTION_ALLOW_BUILTIN=crypto and the Webhook node's \"Raw Body\" option.\nconst crypto = require('crypto');\nconst secret = $env.FEDRAMP_WEBHOOK_SECRET || '';\nconst item = $input.first();\nconst headers = item.json.headers || {};\nconst body = item.json.body || {};\n\nasync function check() {\n  if (secret) {\n    let raw;\n    try {\n      raw = await this.helpers.getBinaryDataBuffer(0, 'data');\n    } catch (e) {\n      const data = item.binary && item.binary.data && item.binary.data.data;\n      if (!data) return 'Raw body missing: turn on \"Raw Body\" in the Webhook node options';\n      raw = Buffer.from(data, 'base64');\n    }\n    const expected = 'sha256=' + crypto.createHmac('sha256', secret).update(raw).digest('hex');\n    const got = String(headers['x-fedramp-auto-signature'] || '');\n    const ok = got.length === expected.length &&\n      crypto.timingSafeEqual(Buffer.from(got), Buffer.from(expected));\n    if (!ok) return 'Bad or missing X-FedRAMP-Auto-Signature';\n  } else if (String($env.FEDRAMP_ALLOW_UNSIGNED || '').toLowerCase() !== 'true') {\n    return 'FEDRAMP_WEBHOOK_SECRET is not set (or set FEDRAMP_ALLOW_UNSIGNED=true)';\n  }\n  if (body.event !== 'fedramp_auto.scan.completed') return 'Unexpected event: ' + body.event;\n  return null;\n}\n\nconst error = await check.call(this);\nreturn [{ json: error ? { ok: false, error } : { ok: true, scan: body } }];"
+      },
+      "id": "40378036-987b-4cd0-b682-204a40f6f013",
+      "name": "Verify signature",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json.ok ? { ok: true } : { ok: false, error: $json.error }) }}",
+        "options": {
+          "responseCode": "={{ $json.ok ? 202 : 401 }}"
+        }
+      },
+      "id": "7253448b-77b6-404f-a2d5-fa03d290abf2",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Rejected requests were already answered with 401; stop them here so the\n// execution shows as failed in n8n. Accepted ones continue as the scan payload.\nconst { ok, error, scan } = $input.first().json;\nif (!ok) throw new Error('Rejected: ' + error);\nreturn [{ json: scan }];"
+      },
+      "id": "025890c1-2a9a-4ffb-8361-716b589630ed",
+      "name": "Accept scan",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// One Slack message per scan that changed something (always for the first scan).\nconst scan = $input.first().json;\nconst s = scan.summary;\nconst c = scan.coverage;\nconst changed = !s.has_previous || s.new_gaps > 0 || s.resolved_gaps > 0 || (c.delta || 0) !== 0;\nif (!changed || !$env.FEDRAMP_SLACK_WEBHOOK_URL) return [];\n\nconst icon = s.new_critical_gaps > 0 ? ':red_circle:'\n  : s.new_gaps > 0 ? ':large_orange_circle:' : ':large_green_circle:';\nconst delta = c.delta === null ? '' : ` (${c.delta >= 0 ? '+' : ''}${c.delta} pts)`;\nconst list = (gaps) => gaps.slice(0, 10)\n  .map((g) => `• *${g.ksi_id}* ${g.title} _(${g.severity})_`).join('\\n')\n  + (gaps.length > 10 ? `\\n…and ${gaps.length - 10} more` : '');\n\nconst lines = [\n  `${icon} *FedRAMP-Auto* · ${scan.target} · ${String(scan.baseline).toUpperCase()} baseline`,\n  `KSI coverage *${c.pct}%*${delta} · ${c.satisfied_ksis}/${c.total_ksis} KSIs · ` +\n    `${s.open_gaps} open gap(s), ${s.critical_gaps} critical`,\n];\nif (!s.has_previous && s.open_gaps) lines.push(`*Open gaps:*\\n${list(scan.open_gaps)}`);\nif (s.has_previous && s.new_gaps) lines.push(`*New gaps (${s.new_gaps}):*\\n${list(scan.new_gaps)}`);\nif (s.resolved_gaps) lines.push(`*Resolved (${s.resolved_gaps}):*\\n${list(scan.resolved_gaps)}`);\nif (scan.ci) lines.push(`<${scan.ci.url}|View run>`);\nreturn [{ json: { text: lines.join('\\n') } }];"
+      },
+      "id": "a3e5ae8e-59fe-4efd-8456-b8d1c93554c6",
+      "name": "Slack summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        900,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.FEDRAMP_SLACK_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: $json.text }) }}",
+        "options": {}
+      },
+      "id": "904a55aa-fdb6-4781-bfe3-d8a2967dee0b",
+      "name": "Post to Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1140,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// One GitHub issue per new gap at a severity in FEDRAMP_ISSUE_SEVERITIES.\nconst scan = $input.first().json;\nconst repo = String($env.FEDRAMP_GITHUB_REPO || '');\nif (!/^[\\w.-]+\\/[\\w.-]+$/.test(repo)) return [];\nconst wanted = String($env.FEDRAMP_ISSUE_SEVERITIES || 'critical,high')\n  .split(',').map((s) => s.trim().toLowerCase());\nconst fence = '```';\n\nreturn scan.new_gaps.filter((g) => wanted.includes(g.severity)).map((g) => {\n  const r = g.remediation || {};\n  const body = [\n    `**Severity:** ${g.severity}`,\n    `**Baseline:** ${scan.baseline}`,\n    `**Missing NIST 800-53 controls:** ${g.missing_controls.join(', ')}`,\n    '',\n  ];\n  if (r.risk_explanation) body.push('### Risk', r.risk_explanation, '');\n  if (r.remediation_action) body.push('### Fix', r.remediation_action, '');\n  if (r.terraform_snippet) body.push(fence + (r.snippet_language || 'hcl'), r.terraform_snippet, fence, '');\n  body.push(scan.ci\n    ? `Found by [this run](${scan.ci.url}) on \\`${String(scan.ci.sha || '').slice(0, 7)}\\`.`\n    : `Found by a scan at ${scan.generated_at}.`);\n  body.push('', '_Opened by FedRAMP-Auto via n8n. Closed automatically when a later scan ' +\n    'no longer reports this gap._');\n  return { json: {\n    repo,\n    title: `[FedRAMP-Auto] ${scan.target} ${g.ksi_id}: ${g.title}`,\n    body: body.join('\\n'),\n    labels: ['fedramp-auto', `severity:${g.severity}`],\n  } };\n});"
+      },
+      "id": "c6a94d92-cacc-4bbc-a15b-af41f6002d32",
+      "name": "New gaps",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.github.com/repos/{{ $json.repo }}/issues",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ title: $json.title, body: $json.body, labels: $json.labels }) }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "value": "application/vnd.github+json",
+              "name": "Accept"
+            },
+            {
+              "value": "2022-11-28",
+              "name": "X-GitHub-Api-Version"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b2c1c454-7382-4207-8a73-1229d016b830",
+      "name": "Open GitHub issue",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1140,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// One item per resolved gap, so its open issue can be found and closed.\nconst scan = $input.first().json;\nconst repo = String($env.FEDRAMP_GITHUB_REPO || '');\nif (!/^[\\w.-]+\\/[\\w.-]+$/.test(repo)) return [];\nreturn scan.resolved_gaps.map((g) => ({ json: {\n  repo,\n  ksi_id: g.ksi_id,\n  prefix: `[FedRAMP-Auto] ${scan.target} ${g.ksi_id}:`,\n} }));"
+      },
+      "id": "c6d06149-25f3-43d8-be3e-0856a2bad2aa",
+      "name": "Resolved gaps",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        900,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.github.com/search/issues",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "value": "={{ \"repo:\" + $json.repo + \" is:issue is:open in:title \\\"\" + $json.ksi_id + \"\\\"\" }}",
+              "name": "q"
+            }
+          ]
+        },
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "value": "application/vnd.github+json",
+              "name": "Accept"
+            },
+            {
+              "value": "2022-11-28",
+              "name": "X-GitHub-Api-Version"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "283077eb-e170-4c10-93af-62aed09134dc",
+      "name": "Find open issue",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1140,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Keep only open issues whose title starts with the resolved gap's exact prefix.\n// The search request runs once per \"Resolved gaps\" item, in the same order.\nconst wanted = $('Resolved gaps').all();\nconst out = [];\n$input.all().forEach((item, i) => {\n  const want = wanted[i] && wanted[i].json;\n  if (!want) return;\n  for (const issue of item.json.items || []) {\n    if (String(issue.title).startsWith(want.prefix)) {\n      out.push({ json: { repo: want.repo, number: issue.number, ksi_id: want.ksi_id } });\n    }\n  }\n});\nreturn out;"
+      },
+      "id": "20194720-817d-44d4-9e64-12c8f08cde3f",
+      "name": "Match issue",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://api.github.com/repos/{{ $json.repo }}/issues/{{ $json.number }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ state: \"closed\", state_reason: \"completed\" }) }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "value": "application/vnd.github+json",
+              "name": "Accept"
+            },
+            {
+              "value": "2022-11-28",
+              "name": "X-GitHub-Api-Version"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "05f81b0b-1ef6-48cc-a18c-c2f7136193b0",
+      "name": "Close GitHub issue",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1580,
+        520
+      ]
+    }
+  ],
+  "connections": {
+    "Scan webhook": {
+      "main": [
+        [
+          {
+            "node": "Verify signature",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify signature": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack summary": {
+      "main": [
+        [
+          {
+            "node": "Post to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "New gaps": {
+      "main": [
+        [
+          {
+            "node": "Open GitHub issue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolved gaps": {
+      "main": [
+        [
+          {
+            "node": "Find open issue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find open issue": {
+      "main": [
+        [
+          {
+            "node": "Match issue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Match issue": {
+      "main": [
+        [
+          {
+            "node": "Close GitHub issue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond": {
+      "main": [
+        [
+          {
+            "node": "Accept scan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Accept scan": {
+      "main": [
+        [
+          {
+            "node": "Slack summary",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "New gaps",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Resolved gaps",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {}
+}
